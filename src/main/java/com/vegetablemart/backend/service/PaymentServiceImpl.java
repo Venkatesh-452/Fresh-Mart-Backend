@@ -7,8 +7,9 @@ import com.vegetablemart.backend.entity.*;
 import com.vegetablemart.backend.repository.OrderRepository;
 import com.vegetablemart.backend.repository.PaymentRepository;
 import com.vegetablemart.backend.repository.UserRepository;
-import com.vegetablemart.backend.service.PaymentService;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,74 +27,65 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     public PaymentResponse createPayment(
-            Long userId,
+            String email,
             CreatePaymentRequest request
     ) {
 
-        // 1. Find user
-        User user = userRepository.findById(userId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "User not found with ID: " + userId
-                        )
-                );
+        User user = getUserByEmail(email);
 
-        // 2. Find order
-        Order order = orderRepository.findById(
-                request.getOrderId()
-        ).orElseThrow(() ->
-                new RuntimeException(
-                        "Order not found with ID: "
-                                + request.getOrderId()
-                )
-        );
+        Order order = orderRepository.findById(request.getOrderId())
+                .orElseThrow(() -> new RuntimeException(
+                        "Order not found with ID: " + request.getOrderId()
+                ));
 
-        // 3. Check order belongs to user
-        if (!order.getUser().getId().equals(userId)) {
+        if (!order.getUser().getId().equals(user.getId())) {
             throw new RuntimeException(
                     "You are not authorized to make payment for this order"
             );
         }
 
-        // 4. Check if payment already exists
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            throw new RuntimeException(
+                    "Cannot create payment for a cancelled order"
+            );
+        }
+
         if (paymentRepository.existsByOrderId(order.getId())) {
             throw new RuntimeException(
                     "Payment already exists for this order"
             );
         }
 
-        // 5. Create payment
+        PaymentStatus status = request.getPaymentMethod() == PaymentMethod.COD
+                ? PaymentStatus.PENDING
+                : PaymentStatus.PENDING;
+
         Payment payment = Payment.builder()
                 .order(order)
                 .user(user)
                 .amount(order.getTotalAmount())
                 .paymentMethod(request.getPaymentMethod())
-                .status(PaymentStatus.PENDING)
+                .status(status)
                 .build();
 
-        // 6. Save
-        payment = paymentRepository.save(payment);
-
-        return mapToResponse(payment);
+        return mapToResponse(paymentRepository.save(payment));
     }
 
     @Override
     @Transactional(readOnly = true)
     public PaymentResponse getPaymentByOrder(
-            Long userId,
+            String email,
             Long orderId
     ) {
 
-        Payment payment = paymentRepository
-                .findByOrderId(orderId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Payment not found for order ID: "
-                                        + orderId
-                        )
-                );
+        User user = getUserByEmail(email);
 
-        if (!payment.getUser().getId().equals(userId)) {
+        Payment payment = paymentRepository.findByOrderId(orderId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Payment not found for order ID: " + orderId
+                ));
+
+        if (!payment.getUser().getId().equals(user.getId())) {
             throw new RuntimeException(
                     "You are not authorized to view this payment"
             );
@@ -104,19 +96,12 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<PaymentResponse> getMyPayments(
-            Long userId
-    ) {
+    public List<PaymentResponse> getMyPayments(String email) {
 
-        userRepository.findById(userId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "User not found with ID: " + userId
-                        )
-                );
+        User user = getUserByEmail(email);
 
         return paymentRepository
-                .findByUserIdOrderByCreatedAtDesc(userId)
+                .findByUserIdOrderByCreatedAtDesc(user.getId())
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
@@ -137,9 +122,7 @@ public class PaymentServiceImpl implements PaymentService {
     public List<PaymentResponse> getPendingPayments() {
 
         return paymentRepository
-                .findByStatusOrderByCreatedAtDesc(
-                        PaymentStatus.PENDING
-                )
+                .findByStatusOrderByCreatedAtDesc(PaymentStatus.PENDING)
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
@@ -151,40 +134,105 @@ public class PaymentServiceImpl implements PaymentService {
             PaymentStatusRequest request
     ) {
 
+        if (paymentId == null || paymentId <= 0) {
+            throw new RuntimeException("Invalid payment ID");
+        }
+
         Payment payment = paymentRepository.findById(paymentId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Payment not found with ID: "
-                                        + paymentId
-                        )
-                );
+                .orElseThrow(() -> new RuntimeException(
+                        "Payment not found with ID: " + paymentId
+                ));
+
+        validateStatusUpdate(payment, request);
+
+        if (request.getTransactionId() != null
+                && !request.getTransactionId().trim().isEmpty()) {
+
+            String transactionId = request.getTransactionId().trim();
+
+            paymentRepository.findByTransactionId(transactionId)
+                    .ifPresent(existing -> {
+                        if (!existing.getId().equals(payment.getId())) {
+                            throw new RuntimeException(
+                                    "Transaction ID already belongs to another payment"
+                            );
+                        }
+                    });
+
+            payment.setTransactionId(transactionId);
+        }
 
         payment.setStatus(request.getStatus());
 
-        if (request.getTransactionId() != null
-                && !request.getTransactionId().isBlank()) {
+        if (request.getStatus() == PaymentStatus.SUCCESS
+                && payment.getPaymentDate() == null) {
 
-            payment.setTransactionId(
-                    request.getTransactionId()
-            );
-        }
-
-        if (request.getStatus() == PaymentStatus.SUCCESS) {
             payment.setPaymentDate(LocalDateTime.now());
 
-            payment.getOrder().setStatus(
-                    OrderStatus.CONFIRMED
+            if (payment.getOrder().getStatus() == OrderStatus.PLACED) {
+                payment.getOrder().setStatus(OrderStatus.CONFIRMED);
+            }
+        }
+
+        if (request.getStatus() == PaymentStatus.REFUNDED) {
+            payment.getOrder().setStatus(OrderStatus.CANCELLED);
+        }
+
+        return mapToResponse(paymentRepository.save(payment));
+    }
+
+    private User getUserByEmail(String email) {
+
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException(
+                        "User not found with email: " + email
+                ));
+    }
+
+    private void validateStatusUpdate(
+            Payment payment,
+            PaymentStatusRequest request
+    ) {
+
+        if (request == null || request.getStatus() == null) {
+            throw new RuntimeException("Payment status is required");
+        }
+
+        PaymentStatus current = payment.getStatus();
+        PaymentStatus next = request.getStatus();
+
+        if (current == PaymentStatus.REFUNDED) {
+            throw new RuntimeException(
+                    "Refunded payment status cannot be changed"
             );
         }
 
-        paymentRepository.save(payment);
+        if (current == PaymentStatus.SUCCESS
+                && next == PaymentStatus.PENDING) {
+            throw new RuntimeException(
+                    "Successful payment cannot be changed back to pending"
+            );
+        }
 
-        return mapToResponse(payment);
+        if (next == PaymentStatus.SUCCESS
+                && payment.getPaymentMethod() == PaymentMethod.ONLINE
+                && (request.getTransactionId() == null
+                || request.getTransactionId().trim().isEmpty())) {
+
+            throw new RuntimeException(
+                    "Transaction ID is required for successful online payment"
+            );
+        }
+
+        if (next == PaymentStatus.REFUNDED
+                && current != PaymentStatus.SUCCESS) {
+            throw new RuntimeException(
+                    "Only successful payments can be refunded"
+            );
+        }
     }
 
-    private PaymentResponse mapToResponse(
-            Payment payment
-    ) {
+    private PaymentResponse mapToResponse(Payment payment) {
 
         return PaymentResponse.builder()
                 .paymentId(payment.getId())
