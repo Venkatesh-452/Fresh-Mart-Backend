@@ -105,14 +105,18 @@ public class PaymentServiceImpl implements PaymentService {
     private void validateStatusUpdate(Payment payment, PaymentStatusRequest request) {
         PaymentStatus current = payment.getStatus(), next = request.getStatus();
         if (current == PaymentStatus.REFUNDED) throw new BadRequestException("Refunded payment status cannot be changed");
-        if (current == PaymentStatus.SUCCESS && next == PaymentStatus.PENDING)
-            throw new BadRequestException("Successful payment cannot be changed back to pending");
+        if (current == PaymentStatus.SUCCESS && (next == PaymentStatus.PENDING || next == PaymentStatus.FAILED))
+            throw new BadRequestException("Successful payment cannot be changed to " + next.name().toLowerCase());
+        if (next == PaymentStatus.SUCCESS && payment.getOrder().getStatus() == OrderStatus.CANCELLED)
+            throw new BadRequestException("Cannot mark payment successful for a cancelled order");
         if (next == PaymentStatus.SUCCESS && payment.getPaymentMethod() == PaymentMethod.ONLINE
                 && (request.getTransactionId() == null || request.getTransactionId().trim().isEmpty())
                 && payment.getTransactionId() == null)
             throw new BadRequestException("Transaction ID is required for successful online payment");
         if (next == PaymentStatus.REFUNDED && current != PaymentStatus.SUCCESS)
             throw new BadRequestException("Only successful payments can be refunded");
+        if (next == PaymentStatus.REFUNDED && payment.getOrder().getStatus() == OrderStatus.DELIVERED)
+            throw new BadRequestException("Delivered order cannot be refunded through this operation");
     }
 
     private void validateId(Long id) { if (id == null || id <= 0) throw new BadRequestException("Payment ID must be positive"); }
