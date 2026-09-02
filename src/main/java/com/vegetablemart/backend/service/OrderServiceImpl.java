@@ -3,14 +3,23 @@ package com.vegetablemart.backend.service;
 import com.vegetablemart.backend.dto.order.OrderItemResponse;
 import com.vegetablemart.backend.dto.order.OrderResponse;
 import com.vegetablemart.backend.dto.order.PlaceOrderRequest;
-import com.vegetablemart.backend.entity.*;
-import com.vegetablemart.backend.repository.*;
-import com.vegetablemart.backend.service.OrderService;
+import com.vegetablemart.backend.entity.Address;
+import com.vegetablemart.backend.entity.Cart;
+import com.vegetablemart.backend.entity.CartItem;
+import com.vegetablemart.backend.entity.Inventory;
+import com.vegetablemart.backend.entity.Order;
+import com.vegetablemart.backend.entity.OrderItem;
+import com.vegetablemart.backend.entity.OrderStatus;
+import com.vegetablemart.backend.entity.User;
+import com.vegetablemart.backend.entity.Vegetable;
+import com.vegetablemart.backend.repository.AddressRepository;
+import com.vegetablemart.backend.repository.CartRepository;
+import com.vegetablemart.backend.repository.InventoryRepository;
+import com.vegetablemart.backend.repository.OrderRepository;
+import com.vegetablemart.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.vegetablemart.backend.repository.InventoryRepository;
-
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -21,252 +30,230 @@ import java.util.List;
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
-    private final OrderItemRepository orderItemRepository;
     private final CartRepository cartRepository;
-    private final CartItemRepository cartItemRepository;
     private final UserRepository userRepository;
-    private final VegetableRepository vegetableRepository;
+    private final AddressRepository addressRepository;
     private final InventoryRepository inventoryRepository;
 
     @Override
-    public OrderResponse placeOrder(
-            Long userId,
-            PlaceOrderRequest request
-    ) {
+    public OrderResponse placeOrder(String email, PlaceOrderRequest request) {
+        User user = getActiveUser(email);
 
-        // 1. Find user
-        User user = userRepository.findById(userId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "User not found with ID: " + userId
-                        )
-                );
-
-        // 2. Find user's cart
-        Cart cart = cartRepository.findByUserId(userId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Cart not found for user"
-                        )
-                );
-
-        // 3. Check cart is not empty
-        if (cart.getItems() == null || cart.getItems().isEmpty()) {
-            throw new RuntimeException(
-                    "Cannot place order. Cart is empty"
-            );
+        if (request == null || request.getAddressId() == null) {
+            throw new IllegalArgumentException("Address ID is required");
         }
 
-        // 4. Create Order
+        Address address = addressRepository
+                .findByIdAndUserId(request.getAddressId(), user.getId())
+                .orElseThrow(() -> new RuntimeException(
+                        "Address not found or does not belong to the user"));
+
+        Cart cart = cartRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new RuntimeException("Cart not found for user"));
+
+        if (cart.getItems() == null || cart.getItems().isEmpty()) {
+            throw new RuntimeException("Cannot place order. Cart is empty");
+        }
+
         Order order = Order.builder()
                 .user(user)
                 .status(OrderStatus.PLACED)
                 .totalAmount(BigDecimal.ZERO)
+                .deliveryFullName(address.getFullName())
+                .deliveryPhone(address.getPhone())
+                .deliveryAddressLine(address.getAddressLine())
+                .deliveryCity(address.getCity())
+                .deliveryState(address.getState())
+                .deliveryPincode(address.getPincode())
+                .deliveryLandmark(address.getLandmark())
                 .build();
-
-        orderRepository.save(order);
 
         BigDecimal totalAmount = BigDecimal.ZERO;
 
-        // 5. Process every cart item
         for (CartItem cartItem : cart.getItems()) {
+            Vegetable vegetable = cartItem.getVegetable();
 
-            Vegetable vegetable = vegetableRepository.findById(
-                    cartItem.getVegetable().getId()
-            ).orElseThrow(() ->
-                    new RuntimeException(
-                            "Vegetable not found with ID: "
-                                    + cartItem.getVegetable().getId()
-                    )
-            );
+            if (vegetable == null || vegetable.getId() == null) {
+                throw new RuntimeException("Invalid product in cart");
+            }
 
-            // 6. Check current stock
             if (!Boolean.TRUE.equals(vegetable.getActive())) {
                 throw new RuntimeException(
-                        vegetable.getName()
-                                + " is currently unavailable"
-                );
+                        vegetable.getName() + " is currently unavailable");
             }
 
-            if (cartItem.getQuantity()
-                    .compareTo(vegetable.getQuantity()) > 0) {
+            Inventory inventory = inventoryRepository.findByVegetableId(vegetable.getId())
+                    .orElseThrow(() -> new RuntimeException(
+                            "Inventory not found for vegetable: " + vegetable.getName()));
 
+            BigDecimal requestedQuantity = cartItem.getQuantity();
+            BigDecimal availableQuantity = inventory.getAvailableQuantity();
+
+            if (requestedQuantity == null || requestedQuantity.signum() <= 0) {
                 throw new RuntimeException(
-                        "Insufficient stock for "
-                                + vegetable.getName()
-                                + ". Available: "
-                                + vegetable.getQuantity()
-                );
+                        "Invalid quantity for " + vegetable.getName());
             }
 
-            // 7. Calculate subtotal
-            BigDecimal subtotal =
-                    cartItem.getPrice()
-                            .multiply(cartItem.getQuantity());
+            if (availableQuantity == null || requestedQuantity.compareTo(availableQuantity) > 0) {
+                throw new RuntimeException(
+                        "Insufficient stock for " + vegetable.getName()
+                                + ". Available: " + availableQuantity);
+            }
 
-            // 8. Create OrderItem
+            BigDecimal price = vegetable.getPrice();
+            if (price == null || price.signum() < 0) {
+                throw new RuntimeException(
+                        "Invalid price for " + vegetable.getName());
+            }
+
+            BigDecimal subtotal = price.multiply(requestedQuantity);
+
             OrderItem orderItem = OrderItem.builder()
                     .order(order)
                     .vegetable(vegetable)
-                    .quantity(cartItem.getQuantity())
-                    .price(cartItem.getPrice())
+                    .quantity(requestedQuantity)
+                    .price(price)
                     .subtotal(subtotal)
                     .build();
 
-            orderItemRepository.save(orderItem);
-
             order.getItems().add(orderItem);
-
-            // 9. Add to total
             totalAmount = totalAmount.add(subtotal);
 
-            // 10. Reduce stock
-            BigDecimal remainingStock =
-                    vegetable.getQuantity()
-                            .subtract(cartItem.getQuantity());
+            inventory.setAvailableQuantity(
+                    availableQuantity.subtract(requestedQuantity));
+            inventory.setSoldQuantity(
+                    inventory.getSoldQuantity().add(requestedQuantity));
 
-            vegetable.setQuantity(remainingStock);
-
-            vegetableRepository.save(vegetable);
-            Inventory inventory = inventoryRepository
-                    .findByVegetableId(vegetable.getId())
-                    .orElseThrow(() ->
-                            new RuntimeException(
-                                    "Inventory not found for vegetable: "
-                                            + vegetable.getName()
-                            )
-                    );
-
-            BigDecimal newSoldQuantity =
-                    inventory.getSoldQuantity()
-                            .add(cartItem.getQuantity());
-
-            BigDecimal newAvailableQuantity =
-                    inventory.getAvailableQuantity()
-                            .subtract(cartItem.getQuantity());
-
-            inventory.setSoldQuantity(newSoldQuantity);
-            inventory.setAvailableQuantity(newAvailableQuantity);
-
-            inventoryRepository.save(inventory);
+            vegetable.setQuantity(inventory.getAvailableQuantity());
         }
 
-        // 11. Set final total
         order.setTotalAmount(totalAmount);
+        Order savedOrder = orderRepository.save(order);
 
-        // 12. Save order
-        orderRepository.save(order);
-
-        // 13. Clear cart
         cart.getItems().clear();
-
         cartRepository.save(cart);
 
-        // 14. Return response
-        return mapToOrderResponse(
-                order,
-                request != null
-                        ? request.getDeliveryAddress()
-                        : null
-        );
+        return mapToOrderResponse(savedOrder);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<OrderResponse> getMyOrders(Long userId) {
+    public List<OrderResponse> getMyOrders(String email) {
+        User user = getActiveUser(email);
 
-        userRepository.findById(userId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "User not found with ID: " + userId
-                        )
-                );
-
-        return orderRepository
-                .findByUserIdOrderByOrderDateDesc(userId)
+        return orderRepository.findByUserOrderByOrderDateDesc(user)
                 .stream()
-                .map(order -> mapToOrderResponse(order, null))
+                .map(this::mapToOrderResponse)
                 .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
-    public OrderResponse getOrderById(
-            Long userId,
-            Long orderId
-    ) {
+    public OrderResponse getOrderById(String email, Long orderId) {
+        User user = getActiveUser(email);
 
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Order not found with ID: "
-                                        + orderId
-                        )
-                );
-
-        // Make sure order belongs to this user
-        if (!order.getUser().getId().equals(userId)) {
-            throw new RuntimeException(
-                    "You are not authorized to view this order"
-            );
+        if (orderId == null || orderId <= 0) {
+            throw new IllegalArgumentException("Order ID must be positive");
         }
 
-        return mapToOrderResponse(order, null);
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Order not found with ID: " + orderId));
+
+        if (!order.getUser().getId().equals(user.getId())) {
+            throw new RuntimeException("You are not authorized to view this order");
+        }
+
+        return mapToOrderResponse(order);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<OrderResponse> getAllOrders() {
-
         return orderRepository.findAll()
                 .stream()
-                .map(order -> mapToOrderResponse(order, null))
+                .map(this::mapToOrderResponse)
                 .toList();
     }
 
     @Override
-    public OrderResponse updateOrderStatus(
-            Long orderId,
-            String status
-    ) {
-
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Order not found with ID: "
-                                        + orderId
-                        )
-                );
-
-        OrderStatus orderStatus;
-
-        try {
-            orderStatus = OrderStatus.valueOf(
-                    status.toUpperCase()
-            );
-        } catch (IllegalArgumentException e) {
-            throw new RuntimeException(
-                    "Invalid order status: " + status
-            );
+    public OrderResponse updateOrderStatus(Long orderId, String status) {
+        if (orderId == null || orderId <= 0) {
+            throw new IllegalArgumentException("Order ID must be positive");
+        }
+        if (status == null || status.isBlank()) {
+            throw new IllegalArgumentException("Order status is required");
         }
 
-        order.setStatus(orderStatus);
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Order not found with ID: " + orderId));
 
-        orderRepository.save(order);
+        OrderStatus newStatus;
+        try {
+            newStatus = OrderStatus.valueOf(status.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid order status: " + status);
+        }
 
-        return mapToOrderResponse(order, null);
+        OrderStatus currentStatus = order.getStatus();
+
+        if (currentStatus == OrderStatus.CANCELLED) {
+            throw new IllegalStateException("Cancelled order cannot be updated");
+        }
+        if (currentStatus == OrderStatus.DELIVERED && newStatus != OrderStatus.DELIVERED) {
+            throw new IllegalStateException("Delivered order cannot be moved to another status");
+        }
+
+        if (newStatus == OrderStatus.CANCELLED) {
+            restoreStock(order);
+        }
+
+        order.setStatus(newStatus);
+        return mapToOrderResponse(orderRepository.save(order));
     }
 
-    private OrderResponse mapToOrderResponse(
-            Order order,
-            String deliveryAddress
-    ) {
+    private void restoreStock(Order order) {
+        for (OrderItem item : order.getItems()) {
+            Vegetable vegetable = item.getVegetable();
 
-        List<OrderItemResponse> items =
-                order.getItems()
-                        .stream()
-                        .map(this::mapToOrderItemResponse)
-                        .toList();
+            Inventory inventory = inventoryRepository.findByVegetableId(vegetable.getId())
+                    .orElseThrow(() -> new RuntimeException(
+                            "Inventory not found for vegetable: " + vegetable.getName()));
+
+            inventory.setAvailableQuantity(
+                    inventory.getAvailableQuantity().add(item.getQuantity()));
+            inventory.setSoldQuantity(
+                    inventory.getSoldQuantity().subtract(item.getQuantity()));
+            vegetable.setQuantity(inventory.getAvailableQuantity());
+        }
+    }
+
+    private User getActiveUser(String email) {
+        if (email == null || email.isBlank()) {
+            throw new RuntimeException("Authenticated user not found");
+        }
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!Boolean.TRUE.equals(user.getActive())) {
+            throw new RuntimeException("User account is inactive");
+        }
+
+        return user;
+    }
+
+    private OrderResponse mapToOrderResponse(Order order) {
+        List<OrderItemResponse> items = order.getItems()
+                .stream()
+                .map(this::mapToOrderItemResponse)
+                .toList();
+
+        String deliveryAddress = order.getDeliveryAddressLine()
+                + ", " + order.getDeliveryCity()
+                + ", " + order.getDeliveryState()
+                + " - " + order.getDeliveryPincode();
 
         return OrderResponse.builder()
                 .orderId(order.getId())
@@ -275,15 +262,18 @@ public class OrderServiceImpl implements OrderService {
                 .totalAmount(order.getTotalAmount())
                 .status(order.getStatus())
                 .orderDate(order.getOrderDate())
+                .deliveryFullName(order.getDeliveryFullName())
+                .deliveryPhone(order.getDeliveryPhone())
                 .deliveryAddress(deliveryAddress)
+                .deliveryCity(order.getDeliveryCity())
+                .deliveryState(order.getDeliveryState())
+                .deliveryPincode(order.getDeliveryPincode())
+                .deliveryLandmark(order.getDeliveryLandmark())
                 .items(items)
                 .build();
     }
 
-    private OrderItemResponse mapToOrderItemResponse(
-            OrderItem item
-    ) {
-
+    private OrderItemResponse mapToOrderItemResponse(OrderItem item) {
         return OrderItemResponse.builder()
                 .id(item.getId())
                 .vegetableId(item.getVegetable().getId())
