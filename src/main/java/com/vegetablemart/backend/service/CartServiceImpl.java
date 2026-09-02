@@ -9,6 +9,7 @@ import com.vegetablemart.backend.entity.CartItem;
 import com.vegetablemart.backend.entity.User;
 import com.vegetablemart.backend.entity.Vegetable;
 import com.vegetablemart.backend.exception.BadRequestException;
+import com.vegetablemart.backend.exception.ForbiddenException;
 import com.vegetablemart.backend.exception.ResourceNotFoundException;
 import com.vegetablemart.backend.repository.CartItemRepository;
 import com.vegetablemart.backend.repository.CartRepository;
@@ -49,7 +50,8 @@ public class CartServiceImpl implements CartService {
             cartItem = CartItem.builder().cart(cart).vegetable(vegetable)
                     .quantity(request.getQuantity()).price(vegetable.getPrice()).build();
         } else {
-            BigDecimal newQuantity = cartItem.getQuantity().add(request.getQuantity());
+            BigDecimal currentQuantity = cartItem.getQuantity() == null ? BigDecimal.ZERO : cartItem.getQuantity();
+            BigDecimal newQuantity = currentQuantity.add(request.getQuantity());
             validateStock(vegetable, newQuantity);
             cartItem.setQuantity(newQuantity);
             cartItem.setPrice(vegetable.getPrice());
@@ -105,8 +107,12 @@ public class CartServiceImpl implements CartService {
         if (email == null || email.isBlank()) {
             throw new BadRequestException("Authenticated user email is required");
         }
-        return userRepository.findByEmail(email)
+        User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
+        if (!Boolean.TRUE.equals(user.getActive())) {
+            throw new BadRequestException("User account is inactive");
+        }
+        return user;
     }
 
     private Cart getOrCreateCart(User user) {
@@ -123,7 +129,7 @@ public class CartServiceImpl implements CartService {
         CartItem cartItem = cartItemRepository.findById(cartItemId)
                 .orElseThrow(() -> new ResourceNotFoundException("Cart item not found"));
         if (cartItem.getCart() == null || !cartItem.getCart().getId().equals(cart.getId())) {
-            throw new BadRequestException("Cart item does not belong to this user");
+            throw new ForbiddenException("You are not authorized to access this cart item");
         }
         return cartItem;
     }
@@ -174,9 +180,11 @@ public class CartServiceImpl implements CartService {
     }
 
     private CartItemResponse mapToCartItemResponse(CartItem item) {
-        BigDecimal subtotal = item.getPrice().multiply(item.getQuantity());
+        BigDecimal price = item.getPrice() == null ? BigDecimal.ZERO : item.getPrice();
+        BigDecimal quantity = item.getQuantity() == null ? BigDecimal.ZERO : item.getQuantity();
+        BigDecimal subtotal = price.multiply(quantity);
         return CartItemResponse.builder().id(item.getId()).vegetableId(item.getVegetable().getId())
                 .vegetableName(item.getVegetable().getName()).imageUrl(item.getVegetable().getImageUrl())
-                .quantity(item.getQuantity()).price(item.getPrice()).subtotal(subtotal).build();
+                .quantity(quantity).price(price).subtotal(subtotal).build();
     }
 }
