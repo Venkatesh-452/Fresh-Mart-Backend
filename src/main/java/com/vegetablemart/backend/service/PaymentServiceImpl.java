@@ -6,6 +6,7 @@ import com.vegetablemart.backend.dto.payment.PaymentStatusRequest;
 import com.vegetablemart.backend.entity.*;
 import com.vegetablemart.backend.exception.BadRequestException;
 import com.vegetablemart.backend.exception.DuplicateResourceException;
+import com.vegetablemart.backend.exception.ForbiddenException;
 import com.vegetablemart.backend.exception.ResourceNotFoundException;
 import com.vegetablemart.backend.repository.OrderRepository;
 import com.vegetablemart.backend.repository.PaymentRepository;
@@ -31,7 +32,7 @@ public class PaymentServiceImpl implements PaymentService {
         Order order = orderRepository.findById(request.getOrderId())
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with ID: " + request.getOrderId()));
         if (!order.getUser().getId().equals(user.getId()))
-            throw new BadRequestException("You are not authorized to make payment for this order");
+            throw new ForbiddenException("You are not authorized to make payment for this order");
         if (order.getStatus() == OrderStatus.CANCELLED)
             throw new BadRequestException("Cannot create payment for a cancelled order");
         if (paymentRepository.existsByOrderId(order.getId()))
@@ -48,7 +49,7 @@ public class PaymentServiceImpl implements PaymentService {
         Payment payment = paymentRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found for order ID: " + orderId));
         if (!payment.getUser().getId().equals(user.getId()))
-            throw new BadRequestException("You are not authorized to view this payment");
+            throw new ForbiddenException("You are not authorized to view this payment");
         return mapToResponse(payment);
     }
 
