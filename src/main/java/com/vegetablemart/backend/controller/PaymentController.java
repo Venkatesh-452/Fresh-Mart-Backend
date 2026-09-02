@@ -6,11 +6,13 @@ import com.vegetablemart.backend.dto.payment.PaymentStatusRequest;
 import com.vegetablemart.backend.service.PaymentService;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,13 +20,10 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/payments")
 @RequiredArgsConstructor
+@Validated
 public class PaymentController {
 
     private final PaymentService paymentService;
-
-    // =========================================================
-    // CUSTOMER APIs
-    // =========================================================
 
     @PostMapping
     public ResponseEntity<PaymentResponse> createPayment(
@@ -33,22 +32,16 @@ public class PaymentController {
     ) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(paymentService.createPayment(
-                        authentication.getName(),
-                        request
-                ));
+                .body(paymentService.createPayment(authentication.getName(), request));
     }
 
     @GetMapping("/order/{orderId}")
     public ResponseEntity<PaymentResponse> getPaymentByOrder(
             Authentication authentication,
-            @PathVariable Long orderId
+            @PathVariable @Positive(message = "Order ID must be positive") Long orderId
     ) {
         return ResponseEntity.ok(
-                paymentService.getPaymentByOrder(
-                        authentication.getName(),
-                        orderId
-                )
+                paymentService.getPaymentByOrder(authentication.getName(), orderId)
         );
     }
 
@@ -56,14 +49,8 @@ public class PaymentController {
     public ResponseEntity<List<PaymentResponse>> getMyPayments(
             Authentication authentication
     ) {
-        return ResponseEntity.ok(
-                paymentService.getMyPayments(authentication.getName())
-        );
+        return ResponseEntity.ok(paymentService.getMyPayments(authentication.getName()));
     }
-
-    // =========================================================
-    // ADMIN APIs
-    // =========================================================
 
     @GetMapping("/all")
     public ResponseEntity<List<PaymentResponse>> getAllPayments() {
@@ -77,11 +64,9 @@ public class PaymentController {
 
     @PutMapping("/{paymentId}/status")
     public ResponseEntity<PaymentResponse> updatePaymentStatus(
-            @PathVariable Long paymentId,
+            @PathVariable @Positive(message = "Payment ID must be positive") Long paymentId,
             @Valid @RequestBody PaymentStatusRequest request
     ) {
-        return ResponseEntity.ok(
-                paymentService.updatePaymentStatus(paymentId, request)
-        );
+        return ResponseEntity.ok(paymentService.updatePaymentStatus(paymentId, request));
     }
 }
