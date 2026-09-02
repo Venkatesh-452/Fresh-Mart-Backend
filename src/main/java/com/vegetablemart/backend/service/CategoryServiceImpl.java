@@ -7,6 +7,7 @@ import com.vegetablemart.backend.exception.BadRequestException;
 import com.vegetablemart.backend.exception.DuplicateResourceException;
 import com.vegetablemart.backend.exception.ResourceNotFoundException;
 import com.vegetablemart.backend.repository.CategoryRepository;
+import com.vegetablemart.backend.repository.VegetableRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -21,22 +22,15 @@ import java.util.List;
 public class CategoryServiceImpl implements CategoryService {
 
     private final CategoryRepository categoryRepository;
-
-    // =========================================================
-    // CREATE CATEGORY
-    // =========================================================
+    private final VegetableRepository vegetableRepository;
 
     @Override
     public CategoryResponse createCategory(CategoryRequest request) {
-
         validateRequest(request);
-
         String name = request.getName().trim();
 
         if (categoryRepository.existsByNameIgnoreCase(name)) {
-            throw new DuplicateResourceException(
-                    "Category already exists with name: " + name
-            );
+            throw new DuplicateResourceException("Category already exists with name: " + name);
         }
 
         Category category = Category.builder()
@@ -48,165 +42,87 @@ public class CategoryServiceImpl implements CategoryService {
         return mapToResponse(categoryRepository.save(category));
     }
 
-    // =========================================================
-    // GET ALL ACTIVE CATEGORIES
-    // =========================================================
-
     @Override
     @Transactional(readOnly = true)
     public List<CategoryResponse> getAllCategories() {
-
         return categoryRepository.findByActiveTrue()
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
-    // =========================================================
-    // GET CATEGORY BY ID
-    // =========================================================
-
     @Override
     @Transactional(readOnly = true)
     public CategoryResponse getCategoryById(Long id) {
-
         validateId(id);
-
         return mapToResponse(findActiveCategory(id));
     }
 
-    // =========================================================
-    // UPDATE CATEGORY
-    // =========================================================
-
     @Override
-    public CategoryResponse updateCategory(
-            Long id,
-            CategoryRequest request
-    ) {
-
+    public CategoryResponse updateCategory(Long id, CategoryRequest request) {
         validateId(id);
         validateRequest(request);
 
         Category category = findActiveCategory(id);
-
         String name = request.getName().trim();
 
         if (!category.getName().equalsIgnoreCase(name)
                 && categoryRepository.existsByNameIgnoreCase(name)) {
-
-            throw new DuplicateResourceException(
-                    "Category already exists with name: " + name
-            );
+            throw new DuplicateResourceException("Category already exists with name: " + name);
         }
 
         category.setName(name);
-        category.setDescription(
-                trimDescription(request.getDescription())
-        );
-
+        category.setDescription(trimDescription(request.getDescription()));
         return mapToResponse(category);
     }
 
-    // =========================================================
-    // SOFT DELETE CATEGORY
-    // =========================================================
-
     @Override
     public void deleteCategory(Long id) {
-
         validateId(id);
-
         Category category = findActiveCategory(id);
+
+        if (vegetableRepository.existsByCategoryIdAndActiveTrue(id)) {
+            throw new BadRequestException(
+                    "Cannot delete category while active vegetables are assigned to it"
+            );
+        }
 
         category.setActive(false);
     }
 
-    // =========================================================
-    // FIND ACTIVE CATEGORY
-    // =========================================================
-
     private Category findActiveCategory(Long id) {
-
         return categoryRepository.findByIdAndActiveTrue(id)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException(
-                                "Category not found with ID: " + id
-                        )
-                );
+                .orElseThrow(() -> new ResourceNotFoundException("Category not found with ID: " + id));
     }
-
-    // =========================================================
-    // VALIDATE REQUEST
-    // =========================================================
 
     private void validateRequest(CategoryRequest request) {
-
         if (request == null) {
-            throw new BadRequestException(
-                    "Category request cannot be null"
-            );
+            throw new BadRequestException("Category request cannot be null");
         }
-
-        if (request.getName() == null
-                || request.getName().trim().isEmpty()) {
-
-            throw new BadRequestException(
-                    "Category name is required"
-            );
+        if (request.getName() == null || request.getName().trim().isEmpty()) {
+            throw new BadRequestException("Category name is required");
         }
-
         if (request.getName().trim().length() > 100) {
-            throw new BadRequestException(
-                    "Category name cannot exceed 100 characters"
-            );
+            throw new BadRequestException("Category name cannot exceed 100 characters");
         }
-
-        if (request.getDescription() != null
-                && request.getDescription().trim().length() > 500) {
-
-            throw new BadRequestException(
-                    "Category description cannot exceed 500 characters"
-            );
+        if (request.getDescription() != null && request.getDescription().trim().length() > 500) {
+            throw new BadRequestException("Category description cannot exceed 500 characters");
         }
     }
-
-    // =========================================================
-    // VALIDATE ID
-    // =========================================================
 
     private void validateId(Long id) {
-
         if (id == null || id <= 0) {
-            throw new BadRequestException(
-                    "Invalid category ID"
-            );
+            throw new BadRequestException("Invalid category ID");
         }
     }
 
-    // =========================================================
-    // TRIM DESCRIPTION
-    // =========================================================
-
     private String trimDescription(String description) {
-
-        if (description == null) {
-            return null;
-        }
-
+        if (description == null) return null;
         String trimmed = description.trim();
-
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    // =========================================================
-    // ENTITY → RESPONSE
-    // =========================================================
-
-    private CategoryResponse mapToResponse(
-            Category category
-    ) {
-
+    private CategoryResponse mapToResponse(Category category) {
         return CategoryResponse.builder()
                 .id(category.getId())
                 .name(category.getName())
