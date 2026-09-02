@@ -5,10 +5,12 @@ import com.vegetablemart.backend.dto.vegetable.VegetableResponse;
 import com.vegetablemart.backend.service.VegetableService;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -16,6 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/vegetables")
 @RequiredArgsConstructor
+@Validated
 public class VegetableController {
 
     private final VegetableService vegetableService;
@@ -23,56 +26,45 @@ public class VegetableController {
     // CREATE - ADMIN
     @PostMapping
     public ResponseEntity<VegetableResponse> createVegetable(
-            @Valid @RequestBody VegetableRequest request
-    ) {
-        VegetableResponse response =
-                vegetableService.createVegetable(request);
-
+            @Valid @RequestBody VegetableRequest request) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(response);
+                .body(vegetableService.createVegetable(request));
     }
 
-    // GET ALL - USER
+    // GET ALL ACTIVE VEGETABLES - PUBLIC
     @GetMapping
     public ResponseEntity<List<VegetableResponse>> getAllVegetables() {
-
-        return ResponseEntity.ok(
-                vegetableService.getAllVegetables()
-        );
+        return ResponseEntity.ok(vegetableService.getAllVegetables());
     }
 
-    // GET BY ID - USER
+    // GET ACTIVE VEGETABLE BY ID - PUBLIC
     @GetMapping("/{id}")
     public ResponseEntity<VegetableResponse> getVegetableById(
-            @PathVariable Long id
-    ) {
+            @PathVariable @Positive(message = "Vegetable ID must be positive") Long id) {
+        return ResponseEntity.ok(vegetableService.getVegetableById(id));
+    }
 
-        return ResponseEntity.ok(
-                vegetableService.getVegetableById(id)
-        );
+    // GET ACTIVE VEGETABLES BY CATEGORY - PUBLIC
+    @GetMapping("/category/{categoryId}")
+    public ResponseEntity<List<VegetableResponse>> getVegetablesByCategory(
+            @PathVariable @Positive(message = "Category ID must be positive") Long categoryId) {
+        return ResponseEntity.ok(vegetableService.getVegetablesByCategory(categoryId));
     }
 
     // UPDATE - ADMIN
     @PutMapping("/{id}")
     public ResponseEntity<VegetableResponse> updateVegetable(
-            @PathVariable Long id,
-            @Valid @RequestBody VegetableRequest request
-    ) {
-
-        return ResponseEntity.ok(
-                vegetableService.updateVegetable(id, request)
-        );
+            @PathVariable @Positive(message = "Vegetable ID must be positive") Long id,
+            @Valid @RequestBody VegetableRequest request) {
+        return ResponseEntity.ok(vegetableService.updateVegetable(id, request));
     }
 
-    // DELETE/DEACTIVATE - ADMIN
+    // SOFT DELETE - ADMIN
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteVegetable(
-            @PathVariable Long id
-    ) {
-
+            @PathVariable @Positive(message = "Vegetable ID must be positive") Long id) {
         vegetableService.deleteVegetable(id);
-
         return ResponseEntity.noContent().build();
     }
 }
