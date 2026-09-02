@@ -129,6 +129,17 @@ public class OrderServiceImpl implements OrderService {
         return mapToOrderResponse(orderRepository.save(order));
     }
 
+    @Override
+    public void restoreStock(Long orderId) {
+        validateId(orderId);
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with ID: " + orderId));
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return;
+        }
+        restoreStock(order);
+    }
+
     private void restoreStock(Order order) {
         for (OrderItem item : order.getItems()) {
             Vegetable vegetable = item.getVegetable();
