@@ -3,6 +3,9 @@ package com.vegetablemart.backend.service;
 import com.vegetablemart.backend.dto.category.CategoryRequest;
 import com.vegetablemart.backend.dto.category.CategoryResponse;
 import com.vegetablemart.backend.entity.Category;
+import com.vegetablemart.backend.exception.BadRequestException;
+import com.vegetablemart.backend.exception.DuplicateResourceException;
+import com.vegetablemart.backend.exception.ResourceNotFoundException;
 import com.vegetablemart.backend.repository.CategoryRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -26,30 +29,23 @@ public class CategoryServiceImpl implements CategoryService {
     @Override
     public CategoryResponse createCategory(CategoryRequest request) {
 
+        validateRequest(request);
+
         String name = request.getName().trim();
 
         if (categoryRepository.existsByNameIgnoreCase(name)) {
-            throw new RuntimeException(
+            throw new DuplicateResourceException(
                     "Category already exists with name: " + name
             );
         }
 
-        String description = request.getDescription();
-
         Category category = Category.builder()
                 .name(name)
-                .description(
-                        description != null
-                                ? description.trim()
-                                : null
-                )
+                .description(trimDescription(request.getDescription()))
                 .active(true)
                 .build();
 
-        Category savedCategory =
-                categoryRepository.save(category);
-
-        return mapToResponse(savedCategory);
+        return mapToResponse(categoryRepository.save(category));
     }
 
     // =========================================================
@@ -76,15 +72,7 @@ public class CategoryServiceImpl implements CategoryService {
 
         validateId(id);
 
-        Category category =
-                categoryRepository.findByIdAndActiveTrue(id)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Category not found with ID: " + id
-                                )
-                        );
-
-        return mapToResponse(category);
+        return mapToResponse(findActiveCategory(id));
     }
 
     // =========================================================
@@ -98,33 +86,23 @@ public class CategoryServiceImpl implements CategoryService {
     ) {
 
         validateId(id);
+        validateRequest(request);
 
-        Category category =
-                categoryRepository.findByIdAndActiveTrue(id)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Category not found with ID: " + id
-                                )
-                        );
+        Category category = findActiveCategory(id);
 
         String name = request.getName().trim();
 
         if (!category.getName().equalsIgnoreCase(name)
                 && categoryRepository.existsByNameIgnoreCase(name)) {
 
-            throw new RuntimeException(
+            throw new DuplicateResourceException(
                     "Category already exists with name: " + name
             );
         }
 
         category.setName(name);
-
-        String description = request.getDescription();
-
         category.setDescription(
-                description != null
-                        ? description.trim()
-                        : null
+                trimDescription(request.getDescription())
         );
 
         return mapToResponse(category);
@@ -139,15 +117,58 @@ public class CategoryServiceImpl implements CategoryService {
 
         validateId(id);
 
-        Category category =
-                categoryRepository.findByIdAndActiveTrue(id)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Category not found with ID: " + id
-                                )
-                        );
+        Category category = findActiveCategory(id);
 
         category.setActive(false);
+    }
+
+    // =========================================================
+    // FIND ACTIVE CATEGORY
+    // =========================================================
+
+    private Category findActiveCategory(Long id) {
+
+        return categoryRepository.findByIdAndActiveTrue(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Category not found with ID: " + id
+                        )
+                );
+    }
+
+    // =========================================================
+    // VALIDATE REQUEST
+    // =========================================================
+
+    private void validateRequest(CategoryRequest request) {
+
+        if (request == null) {
+            throw new BadRequestException(
+                    "Category request cannot be null"
+            );
+        }
+
+        if (request.getName() == null
+                || request.getName().trim().isEmpty()) {
+
+            throw new BadRequestException(
+                    "Category name is required"
+            );
+        }
+
+        if (request.getName().trim().length() > 100) {
+            throw new BadRequestException(
+                    "Category name cannot exceed 100 characters"
+            );
+        }
+
+        if (request.getDescription() != null
+                && request.getDescription().trim().length() > 500) {
+
+            throw new BadRequestException(
+                    "Category description cannot exceed 500 characters"
+            );
+        }
     }
 
     // =========================================================
@@ -157,10 +178,25 @@ public class CategoryServiceImpl implements CategoryService {
     private void validateId(Long id) {
 
         if (id == null || id <= 0) {
-            throw new RuntimeException(
+            throw new BadRequestException(
                     "Invalid category ID"
             );
         }
+    }
+
+    // =========================================================
+    // TRIM DESCRIPTION
+    // =========================================================
+
+    private String trimDescription(String description) {
+
+        if (description == null) {
+            return null;
+        }
+
+        String trimmed = description.trim();
+
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     // =========================================================
