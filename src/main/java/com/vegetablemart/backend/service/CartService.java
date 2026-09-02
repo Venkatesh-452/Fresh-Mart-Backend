@@ -6,17 +6,54 @@ import com.vegetablemart.backend.dto.cart.UpdateCartItemRequest;
 
 public interface CartService {
 
-    CartResponse addToCart(Long userId, AddToCartRequest request);
 
-    CartResponse getCart(Long userId);
+// =========================================================
+// ADD ITEM TO LOGGED-IN USER CART
+// =========================================================
+
+    CartResponse addToCart(
+            String email,
+            AddToCartRequest request
+    );
+
+
+// =========================================================
+// GET LOGGED-IN USER CART
+// =========================================================
+
+    CartResponse getCart(
+            String email
+    );
+
+
+// =========================================================
+// UPDATE CART ITEM
+// =========================================================
 
     CartResponse updateCartItem(
-            Long userId,
+            String email,
             Long cartItemId,
             UpdateCartItemRequest request
     );
 
-    void removeCartItem(Long userId, Long cartItemId);
 
-    void clearCart(Long userId);
+// =========================================================
+// REMOVE CART ITEM
+// =========================================================
+
+    void removeCartItem(
+            String email,
+            Long cartItemId
+    );
+
+
+// =========================================================
+// CLEAR LOGGED-IN USER CART
+// =========================================================
+
+    void clearCart(
+            String email
+    );
+
+
 }

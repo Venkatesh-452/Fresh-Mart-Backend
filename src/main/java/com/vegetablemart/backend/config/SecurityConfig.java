@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import org.springframework.http.HttpMethod;
+
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -27,14 +29,20 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtFilter jwtFilter;
-
     private final CustomUserDetailsService userDetailsService;
+
+    // =========================================================
+    // PASSWORD ENCODER
+    // =========================================================
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-
         return new BCryptPasswordEncoder();
     }
+
+    // =========================================================
+    // AUTHENTICATION PROVIDER
+    // =========================================================
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
@@ -47,6 +55,10 @@ public class SecurityConfig {
         return provider;
     }
 
+    // =========================================================
+    // AUTHENTICATION MANAGER
+    // =========================================================
+
     @Bean
     public AuthenticationManager authenticationManager(
             AuthenticationConfiguration configuration
@@ -55,44 +67,133 @@ public class SecurityConfig {
         return configuration.getAuthenticationManager();
     }
 
+    // =========================================================
+    // SECURITY FILTER CHAIN
+    // =========================================================
+
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http
     ) throws Exception {
 
         http
-                // Disable CSRF for REST API
+
+                // -------------------------------------------------
+                // CSRF
+                // -------------------------------------------------
                 .csrf(csrf -> csrf.disable())
 
-                // JWT based authentication
+                // -------------------------------------------------
+                // SESSION MANAGEMENT
+                // -------------------------------------------------
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(
                                 SessionCreationPolicy.STATELESS
                         )
                 )
 
+                // -------------------------------------------------
+                // AUTHORIZATION
+                // -------------------------------------------------
                 .authorizeHttpRequests(auth -> auth
 
-                        // Public APIs
+                        // =================================================
+                        // PUBLIC
+                        // =================================================
+
                         .requestMatchers(
                                 "/",
-                                "/admin/**",
                                 "/api/users/register",
                                 "/api/users/login"
                         ).permitAll()
 
-                        // ADMIN APIs
-                        .requestMatchers("/api/admin/**")
-                        .hasRole("ADMIN")
+                        // =================================================
+                        // PUBLIC CATEGORY CATALOG
+                        // =================================================
 
-                        // Everything else requires authentication
-                        .anyRequest()
-                        .authenticated()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/categories/**"
+                        ).permitAll()
+
+                        // =================================================
+                        // PUBLIC VEGETABLE CATALOG
+                        // =================================================
+
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/vegetables/**"
+                        ).permitAll()
+
+                        // =================================================
+                        // ADMIN ONLY
+                        // =================================================
+
+                        .requestMatchers(
+                                "/api/admin/**"
+                        ).hasRole("ADMIN")
+
+                        .requestMatchers(
+                                "/api/inventory/**"
+                        ).hasRole("ADMIN")
+
+                        // =================================================
+                        // VEGETABLE MANAGEMENT
+                        // =================================================
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/vegetables/**"
+                        ).hasRole("ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/vegetables/**"
+                        ).hasRole("ADMIN")
+
+                        .requestMatchers(
+                                HttpMethod.DELETE,
+                                "/api/vegetables/**"
+                        ).hasRole("ADMIN")
+
+                        // =================================================
+                        // ORDER MANAGEMENT
+                        // =================================================
+
+                        .requestMatchers(
+                                "/api/orders/all",
+                                "/api/orders/*/status"
+                        ).hasRole("ADMIN")
+
+                        // =================================================
+                        // PAYMENT MANAGEMENT
+                        // =================================================
+
+                        .requestMatchers(
+                                "/api/payments/all",
+                                "/api/payments/pending",
+                                "/api/payments/*/status"
+                        ).hasRole("ADMIN")
+
+                        // =================================================
+                        // EVERYTHING ELSE
+                        // =================================================
+
+                        .anyRequest().authenticated()
                 )
 
-                .authenticationProvider(authenticationProvider())
+                // -------------------------------------------------
+                // AUTHENTICATION PROVIDER
+                // -------------------------------------------------
 
-                // JWT filter runs before Spring's username/password filter
+                .authenticationProvider(
+                        authenticationProvider()
+                )
+
+                // -------------------------------------------------
+                // JWT FILTER
+                // -------------------------------------------------
+
                 .addFilterBefore(
                         jwtFilter,
                         UsernamePasswordAuthenticationFilter.class

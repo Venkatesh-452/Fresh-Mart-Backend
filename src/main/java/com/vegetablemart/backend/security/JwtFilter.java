@@ -20,17 +20,31 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class JwtFilter extends OncePerRequestFilter {
 
+
     private final JwtService jwtService;
+
     private final CustomUserDetailsService userDetailsService;
 
+
+// =========================================================
+// SKIP JWT FILTER FOR PUBLIC AUTH APIs
+// =========================================================
+
     @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) {
+    protected boolean shouldNotFilter(
+            HttpServletRequest request
+    ) {
 
         String path = request.getServletPath();
 
         return path.equals("/api/users/register")
                 || path.equals("/api/users/login");
     }
+
+
+// =========================================================
+// JWT FILTER
+// =========================================================
 
     @Override
     protected void doFilterInternal(
@@ -39,53 +53,86 @@ public class JwtFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
 
-        String authHeader = request.getHeader("Authorization");
+        String authHeader =
+                request.getHeader("Authorization");
 
-        String token = null;
-        String email = null;
 
-        // Check Authorization header
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+        // No Authorization header
+        if (authHeader == null
+                || !authHeader.startsWith("Bearer ")) {
 
-            token = authHeader.substring(7);
-
-            try {
-                email = jwtService.extractEmail(token);
-            } catch (Exception e) {
-                email = null;
-            }
+            filterChain.doFilter(request, response);
+            return;
         }
 
-        // Authenticate user
-        if (email != null &&
-                SecurityContextHolder.getContext().getAuthentication() == null) {
 
-            UserDetails userDetails =
-                    userDetailsService.loadUserByUsername(email);
+        // Extract JWT token
+        String token =
+                authHeader.substring(7);
 
-            if (jwtService.isTokenValid(
-                    token,
-                    userDetails.getUsername()
-            )) {
 
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails,
-                                null,
-                                userDetails.getAuthorities()
-                        );
+        try {
 
-                authentication.setDetails(
-                        new WebAuthenticationDetailsSource()
-                                .buildDetails(request)
-                );
+            // Extract email from JWT
+            String email =
+                    jwtService.extractEmail(token);
 
-                SecurityContextHolder
-                        .getContext()
-                        .setAuthentication(authentication);
+
+            // Authenticate only if user is not already authenticated
+            if (email != null
+                    && SecurityContextHolder
+                    .getContext()
+                    .getAuthentication() == null) {
+
+
+                UserDetails userDetails =
+                        userDetailsService
+                                .loadUserByUsername(email);
+
+
+                // Validate JWT token
+                if (jwtService.isTokenValid(
+                        token,
+                        userDetails.getUsername()
+                )) {
+
+
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+
+                                    userDetails,
+
+                                    null,
+
+                                    userDetails.getAuthorities()
+                            );
+
+
+                    authentication.setDetails(
+
+                            new WebAuthenticationDetailsSource()
+                                    .buildDetails(request)
+                    );
+
+
+                    // Store authentication in Spring Security Context
+                    SecurityContextHolder
+                            .getContext()
+                            .setAuthentication(authentication);
+                }
+
             }
+
+        } catch (Exception exception) {
+
+            // Invalid or expired JWT
+            SecurityContextHolder.clearContext();
         }
 
+
+        // Continue request
         filterChain.doFilter(request, response);
     }
+
+
 }

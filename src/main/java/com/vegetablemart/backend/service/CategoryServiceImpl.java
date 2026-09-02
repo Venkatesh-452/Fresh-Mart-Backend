@@ -8,118 +8,165 @@ import com.vegetablemart.backend.repository.CategoryRepository;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class CategoryServiceImpl implements CategoryService {
 
     private final CategoryRepository categoryRepository;
 
+    // =========================================================
     // CREATE CATEGORY
+    // =========================================================
+
     @Override
     public CategoryResponse createCategory(CategoryRequest request) {
 
-        // Check if category already exists
-        if (categoryRepository.existsByName(request.getName())) {
-            throw new RuntimeException("Category already exists");
+        String name = request.getName().trim();
+
+        if (categoryRepository.existsByNameIgnoreCase(name)) {
+            throw new RuntimeException(
+                    "Category already exists with name: " + name
+            );
         }
 
-        // Create entity
+        String description = request.getDescription();
+
         Category category = Category.builder()
-                .name(request.getName())
-                .description(request.getDescription())
+                .name(name)
+                .description(
+                        description != null
+                                ? description.trim()
+                                : null
+                )
                 .active(true)
                 .build();
 
-        // Save to database
         Category savedCategory =
                 categoryRepository.save(category);
 
-        // Convert Entity → Response
         return mapToResponse(savedCategory);
     }
 
+    // =========================================================
+    // GET ALL ACTIVE CATEGORIES
+    // =========================================================
 
-    // GET ALL CATEGORIES
     @Override
+    @Transactional(readOnly = true)
     public List<CategoryResponse> getAllCategories() {
 
-        return categoryRepository.findAll()
+        return categoryRepository.findByActiveTrue()
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
-
+    // =========================================================
     // GET CATEGORY BY ID
+    // =========================================================
+
     @Override
+    @Transactional(readOnly = true)
     public CategoryResponse getCategoryById(Long id) {
 
+        validateId(id);
+
         Category category =
-                categoryRepository.findById(id)
+                categoryRepository.findByIdAndActiveTrue(id)
                         .orElseThrow(() ->
                                 new RuntimeException(
-                                        "Category not found"
+                                        "Category not found with ID: " + id
                                 )
                         );
 
         return mapToResponse(category);
     }
 
-
+    // =========================================================
     // UPDATE CATEGORY
+    // =========================================================
+
     @Override
     public CategoryResponse updateCategory(
             Long id,
             CategoryRequest request
     ) {
 
+        validateId(id);
+
         Category category =
-                categoryRepository.findById(id)
+                categoryRepository.findByIdAndActiveTrue(id)
                         .orElseThrow(() ->
                                 new RuntimeException(
-                                        "Category not found"
+                                        "Category not found with ID: " + id
                                 )
                         );
 
-        // Check duplicate name
-        if (!category.getName().equals(request.getName())
-                && categoryRepository.existsByName(request.getName())) {
+        String name = request.getName().trim();
+
+        if (!category.getName().equalsIgnoreCase(name)
+                && categoryRepository.existsByNameIgnoreCase(name)) {
 
             throw new RuntimeException(
-                    "Category already exists"
+                    "Category already exists with name: " + name
             );
         }
 
-        category.setName(request.getName());
-        category.setDescription(request.getDescription());
+        category.setName(name);
 
-        Category updatedCategory =
-                categoryRepository.save(category);
+        String description = request.getDescription();
 
-        return mapToResponse(updatedCategory);
+        category.setDescription(
+                description != null
+                        ? description.trim()
+                        : null
+        );
+
+        return mapToResponse(category);
     }
 
+    // =========================================================
+    // SOFT DELETE CATEGORY
+    // =========================================================
 
-    // DELETE CATEGORY
     @Override
     public void deleteCategory(Long id) {
 
+        validateId(id);
+
         Category category =
-                categoryRepository.findById(id)
+                categoryRepository.findByIdAndActiveTrue(id)
                         .orElseThrow(() ->
                                 new RuntimeException(
-                                        "Category not found"
+                                        "Category not found with ID: " + id
                                 )
                         );
 
-        categoryRepository.delete(category);
+        category.setActive(false);
     }
 
+    // =========================================================
+    // VALIDATE ID
+    // =========================================================
 
+    private void validateId(Long id) {
+
+        if (id == null || id <= 0) {
+            throw new RuntimeException(
+                    "Invalid category ID"
+            );
+        }
+    }
+
+    // =========================================================
     // ENTITY → RESPONSE
+    // =========================================================
+
     private CategoryResponse mapToResponse(
             Category category
     ) {

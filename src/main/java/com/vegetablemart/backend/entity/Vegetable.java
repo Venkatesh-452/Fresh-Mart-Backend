@@ -25,10 +25,18 @@ public class Vegetable {
     @Column(length = 500)
     private String description;
 
-    @Column(nullable = false, precision = 10, scale = 2)
+    @Column(
+            nullable = false,
+            precision = 10,
+            scale = 2
+    )
     private BigDecimal price;
 
-    @Column(nullable = false)
+    @Column(
+            nullable = false,
+            precision = 10,
+            scale = 2
+    )
     private BigDecimal quantity;
 
     @Column(nullable = false)
@@ -37,13 +45,20 @@ public class Vegetable {
     private String imageUrl;
 
     @Column(nullable = false)
+    @Builder.Default
     private Boolean active = true;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "category_id", nullable = false)
+    @JoinColumn(
+            name = "category_id",
+            nullable = false
+    )
     private Category category;
 
-    @Column(nullable = false, updatable = false)
+    @Column(
+            nullable = false,
+            updatable = false
+    )
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

@@ -20,7 +20,7 @@ public class VegetableController {
 
     private final VegetableService vegetableService;
 
-    // CREATE
+    // CREATE - ADMIN
     @PostMapping
     public ResponseEntity<VegetableResponse> createVegetable(
             @Valid @RequestBody VegetableRequest request
@@ -33,7 +33,7 @@ public class VegetableController {
                 .body(response);
     }
 
-    // GET ALL
+    // GET ALL - USER
     @GetMapping
     public ResponseEntity<List<VegetableResponse>> getAllVegetables() {
 
@@ -42,7 +42,7 @@ public class VegetableController {
         );
     }
 
-    // GET BY ID
+    // GET BY ID - USER
     @GetMapping("/{id}")
     public ResponseEntity<VegetableResponse> getVegetableById(
             @PathVariable Long id
@@ -53,7 +53,7 @@ public class VegetableController {
         );
     }
 
-    // UPDATE
+    // UPDATE - ADMIN
     @PutMapping("/{id}")
     public ResponseEntity<VegetableResponse> updateVegetable(
             @PathVariable Long id,
@@ -65,7 +65,7 @@ public class VegetableController {
         );
     }
 
-    // DELETE
+    // DELETE/DEACTIVATE - ADMIN
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteVegetable(
             @PathVariable Long id

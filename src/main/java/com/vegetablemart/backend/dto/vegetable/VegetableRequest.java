@@ -3,6 +3,7 @@ package com.vegetablemart.backend.dto.vegetable;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import lombok.Getter;
@@ -37,16 +38,25 @@ public class VegetableRequest {
 
     @NotNull(message = "Quantity is required")
     @DecimalMin(
-            value = "0.0",
-            message = "Quantity cannot be negative"
+            value = "0.01",
+            message = "Quantity must be greater than 0"
     )
     private BigDecimal quantity;
 
     @NotBlank(message = "Unit is required")
+    @Size(
+            max = 20,
+            message = "Unit cannot exceed 20 characters"
+    )
     private String unit;
 
+    @Size(
+            max = 500,
+            message = "Image URL cannot exceed 500 characters"
+    )
     private String imageUrl;
 
     @NotNull(message = "Category ID is required")
+    @Positive(message = "Category ID must be greater than 0")
     private Long categoryId;
 }
