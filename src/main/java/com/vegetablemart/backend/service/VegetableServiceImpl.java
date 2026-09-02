@@ -8,7 +8,6 @@ import com.vegetablemart.backend.repository.CategoryRepository;
 import com.vegetablemart.backend.repository.VegetableRepository;
 
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,56 +23,35 @@ public class VegetableServiceImpl implements VegetableService {
     private final CategoryRepository categoryRepository;
 
     @Override
-    public VegetableResponse createVegetable(
-            VegetableRequest request
-    ) {
-
+    public VegetableResponse createVegetable(VegetableRequest request) {
         validateRequest(request);
 
         String name = request.getName().trim();
 
-        // Check duplicate vegetable name
-        if (vegetableRepository.existsByName(name)) {
-            throw new RuntimeException(
-                    "Vegetable already exists with name: " + name
-            );
+        if (vegetableRepository.existsByNameIgnoreCase(name)) {
+            throw new RuntimeException("Vegetable already exists with name: " + name);
         }
 
-        // Find category
-        Category category =
-                categoryRepository.findById(
-                                request.getCategoryId()
-                        )
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Category not found with ID: "
-                                                + request.getCategoryId()
-                                )
-                        );
+        Category category = getActiveCategory(request.getCategoryId());
 
-        Vegetable vegetable =
-                Vegetable.builder()
-                        .name(name)
-                        .description(request.getDescription())
-                        .price(request.getPrice())
-                        .quantity(request.getQuantity())
-                        .unit(request.getUnit().trim())
-                        .imageUrl(request.getImageUrl())
-                        .active(true)
-                        .category(category)
-                        .build();
+        Vegetable vegetable = Vegetable.builder()
+                .name(name)
+                .description(trimToNull(request.getDescription()))
+                .price(request.getPrice())
+                .quantity(request.getQuantity())
+                .unit(request.getUnit().trim())
+                .imageUrl(trimToNull(request.getImageUrl()))
+                .active(true)
+                .category(category)
+                .build();
 
-        Vegetable savedVegetable =
-                vegetableRepository.save(vegetable);
-
-        return mapToResponse(savedVegetable);
+        return mapToResponse(vegetableRepository.save(vegetable));
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<VegetableResponse> getAllVegetables() {
-
-        return vegetableRepository.findAll()
+        return vegetableRepository.findByActiveTrue()
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
@@ -81,182 +59,114 @@ public class VegetableServiceImpl implements VegetableService {
 
     @Override
     @Transactional(readOnly = true)
-    public VegetableResponse getVegetableById(
-            Long id
-    ) {
+    public VegetableResponse getVegetableById(Long id) {
+        validateId(id);
 
-        if (id == null || id <= 0) {
-            throw new RuntimeException(
-                    "Invalid vegetable ID"
-            );
-        }
-
-        Vegetable vegetable =
-                vegetableRepository.findById(id)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Vegetable not found with ID: "
-                                                + id
-                                )
-                        );
+        Vegetable vegetable = vegetableRepository.findByIdAndActiveTrue(id)
+                .orElseThrow(() -> new RuntimeException("Vegetable not found with ID: " + id));
 
         return mapToResponse(vegetable);
     }
 
     @Override
-    public VegetableResponse updateVegetable(
-            Long id,
-            VegetableRequest request
-    ) {
+    @Transactional(readOnly = true)
+    public List<VegetableResponse> getVegetablesByCategory(Long categoryId) {
+        validateId(categoryId);
 
-        validateRequest(request);
-
-        if (id == null || id <= 0) {
-            throw new RuntimeException(
-                    "Invalid vegetable ID"
-            );
+        if (!categoryRepository.findByIdAndActiveTrue(categoryId).isPresent()) {
+            throw new RuntimeException("Category not found with ID: " + categoryId);
         }
 
-        Vegetable vegetable =
-                vegetableRepository.findById(id)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Vegetable not found with ID: "
-                                                + id
-                                )
-                        );
+        return vegetableRepository.findByCategoryIdAndActiveTrue(categoryId)
+                .stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    @Override
+    public VegetableResponse updateVegetable(Long id, VegetableRequest request) {
+        validateId(id);
+        validateRequest(request);
+
+        Vegetable vegetable = vegetableRepository.findByIdAndActiveTrue(id)
+                .orElseThrow(() -> new RuntimeException("Vegetable not found with ID: " + id));
 
         String name = request.getName().trim();
 
-        // Check duplicate name
-        if (!vegetable.getName().equalsIgnoreCase(name)
-                && vegetableRepository.existsByName(name)) {
-
-            throw new RuntimeException(
-                    "Vegetable already exists with name: "
-                            + name
-            );
+        if (vegetableRepository.existsByNameIgnoreCaseAndIdNot(name, id)) {
+            throw new RuntimeException("Vegetable already exists with name: " + name);
         }
 
-        Category category =
-                categoryRepository.findById(
-                                request.getCategoryId()
-                        )
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Category not found with ID: "
-                                                + request.getCategoryId()
-                                )
-                        );
+        Category category = getActiveCategory(request.getCategoryId());
 
         vegetable.setName(name);
-        vegetable.setDescription(
-                request.getDescription()
-        );
-        vegetable.setPrice(
-                request.getPrice()
-        );
-        vegetable.setQuantity(
-                request.getQuantity()
-        );
-        vegetable.setUnit(
-                request.getUnit().trim()
-        );
-        vegetable.setImageUrl(
-                request.getImageUrl()
-        );
+        vegetable.setDescription(trimToNull(request.getDescription()));
+        vegetable.setPrice(request.getPrice());
+        vegetable.setQuantity(request.getQuantity());
+        vegetable.setUnit(request.getUnit().trim());
+        vegetable.setImageUrl(trimToNull(request.getImageUrl()));
         vegetable.setCategory(category);
 
-        Vegetable updatedVegetable =
-                vegetableRepository.save(vegetable);
-
-        return mapToResponse(updatedVegetable);
+        return mapToResponse(vegetableRepository.save(vegetable));
     }
 
     @Override
     public void deleteVegetable(Long id) {
+        validateId(id);
 
-        if (id == null || id <= 0) {
-            throw new RuntimeException(
-                    "Invalid vegetable ID"
-            );
-        }
+        Vegetable vegetable = vegetableRepository.findByIdAndActiveTrue(id)
+                .orElseThrow(() -> new RuntimeException("Vegetable not found with ID: " + id));
 
-        Vegetable vegetable =
-                vegetableRepository.findById(id)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Vegetable not found with ID: "
-                                                + id
-                                )
-                        );
-
-        /*
-         * Prefer soft delete for e-commerce applications.
-         * This preserves historical cart/order references.
-         */
         vegetable.setActive(false);
-
         vegetableRepository.save(vegetable);
     }
 
-    private void validateRequest(
-            VegetableRequest request
-    ) {
+    private Category getActiveCategory(Long categoryId) {
+        return categoryRepository.findByIdAndActiveTrue(categoryId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Active category not found with ID: " + categoryId));
+    }
 
+    private void validateRequest(VegetableRequest request) {
         if (request == null) {
-            throw new RuntimeException(
-                    "Vegetable request cannot be null"
-            );
+            throw new RuntimeException("Vegetable request cannot be null");
         }
 
-        if (request.getName() == null
-                || request.getName().trim().isEmpty()) {
-
-            throw new RuntimeException(
-                    "Vegetable name is required"
-            );
+        if (request.getName() == null || request.getName().trim().isEmpty()) {
+            throw new RuntimeException("Vegetable name is required");
         }
 
-        if (request.getPrice() == null
-                || request.getPrice()
-                .compareTo(BigDecimal.ZERO) < 0) {
-
-            throw new RuntimeException(
-                    "Price cannot be negative"
-            );
+        if (request.getPrice() == null || request.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("Price must be greater than 0");
         }
 
-        if (request.getQuantity() == null
-                || request.getQuantity()
-                .compareTo(BigDecimal.ZERO) < 0) {
-
-            throw new RuntimeException(
-                    "Quantity cannot be negative"
-            );
+        if (request.getQuantity() == null || request.getQuantity().compareTo(BigDecimal.ZERO) < 0) {
+            throw new RuntimeException("Quantity cannot be negative");
         }
 
-        if (request.getUnit() == null
-                || request.getUnit().trim().isEmpty()) {
-
-            throw new RuntimeException(
-                    "Unit is required"
-            );
+        if (request.getUnit() == null || request.getUnit().trim().isEmpty()) {
+            throw new RuntimeException("Unit is required");
         }
 
-        if (request.getCategoryId() == null
-                || request.getCategoryId() <= 0) {
-
-            throw new RuntimeException(
-                    "Valid category ID is required"
-            );
+        if (request.getCategoryId() == null || request.getCategoryId() <= 0) {
+            throw new RuntimeException("Valid category ID is required");
         }
     }
 
-    private VegetableResponse mapToResponse(
-            Vegetable vegetable
-    ) {
+    private void validateId(Long id) {
+        if (id == null || id <= 0) {
+            throw new RuntimeException("Invalid vegetable/category ID");
+        }
+    }
 
+    private String trimToNull(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private VegetableResponse mapToResponse(Vegetable vegetable) {
         return VegetableResponse.builder()
                 .id(vegetable.getId())
                 .name(vegetable.getName())
@@ -266,22 +176,10 @@ public class VegetableServiceImpl implements VegetableService {
                 .unit(vegetable.getUnit())
                 .imageUrl(vegetable.getImageUrl())
                 .active(vegetable.getActive())
-                .categoryId(
-                        vegetable.getCategory() != null
-                                ? vegetable.getCategory().getId()
-                                : null
-                )
-                .categoryName(
-                        vegetable.getCategory() != null
-                                ? vegetable.getCategory().getName()
-                                : null
-                )
-                .createdAt(
-                        vegetable.getCreatedAt()
-                )
-                .updatedAt(
-                        vegetable.getUpdatedAt()
-                )
+                .categoryId(vegetable.getCategory() != null ? vegetable.getCategory().getId() : null)
+                .categoryName(vegetable.getCategory() != null ? vegetable.getCategory().getName() : null)
+                .createdAt(vegetable.getCreatedAt())
+                .updatedAt(vegetable.getUpdatedAt())
                 .build();
     }
 }
