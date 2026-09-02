@@ -22,6 +22,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
     private final UserRepository userRepository;
     private final OrderRepository orderRepository;
+    private final OrderService orderService;
 
     @Override
     public PaymentResponse createPayment(String email, CreatePaymentRequest request) {
@@ -89,7 +90,10 @@ public class PaymentServiceImpl implements PaymentService {
             payment.setPaymentDate(LocalDateTime.now());
             if (payment.getOrder().getStatus() == OrderStatus.PLACED) payment.getOrder().setStatus(OrderStatus.CONFIRMED);
         }
-        if (request.getStatus() == PaymentStatus.REFUNDED) payment.getOrder().setStatus(OrderStatus.CANCELLED);
+        if (request.getStatus() == PaymentStatus.REFUNDED) {
+            orderService.restoreStock(payment.getOrder().getId());
+            payment.getOrder().setStatus(OrderStatus.CANCELLED);
+        }
         return mapToResponse(paymentRepository.save(payment));
     }
 
@@ -104,7 +108,8 @@ public class PaymentServiceImpl implements PaymentService {
         if (current == PaymentStatus.SUCCESS && next == PaymentStatus.PENDING)
             throw new BadRequestException("Successful payment cannot be changed back to pending");
         if (next == PaymentStatus.SUCCESS && payment.getPaymentMethod() == PaymentMethod.ONLINE
-                && (request.getTransactionId() == null || request.getTransactionId().trim().isEmpty()))
+                && (request.getTransactionId() == null || request.getTransactionId().trim().isEmpty())
+                && payment.getTransactionId() == null)
             throw new BadRequestException("Transaction ID is required for successful online payment");
         if (next == PaymentStatus.REFUNDED && current != PaymentStatus.SUCCESS)
             throw new BadRequestException("Only successful payments can be refunded");
