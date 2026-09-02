@@ -6,6 +6,9 @@ import com.vegetablemart.backend.dto.auth.RegisterRequest;
 import com.vegetablemart.backend.dto.user.UserResponse;
 import com.vegetablemart.backend.entity.Role;
 import com.vegetablemart.backend.entity.User;
+import com.vegetablemart.backend.exception.BadRequestException;
+import com.vegetablemart.backend.exception.DuplicateResourceException;
+import com.vegetablemart.backend.exception.ResourceNotFoundException;
 import com.vegetablemart.backend.repository.UserRepository;
 import com.vegetablemart.backend.security.JwtService;
 import lombok.RequiredArgsConstructor;
@@ -23,39 +26,31 @@ public class UserServiceImpl implements UserService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
 
-    // =========================================================
-    // REGISTER
-    // =========================================================
-
     @Override
     public UserResponse register(RegisterRequest request) {
+        if (request == null) {
+            throw new BadRequestException("Registration request is required");
+        }
 
-        // Check if email already exists
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email already registered");
+            throw new DuplicateResourceException("Email already registered: " + request.getEmail());
         }
 
-        // Check if phone already exists
         if (userRepository.existsByPhone(request.getPhone())) {
-            throw new RuntimeException("Phone number already registered");
+            throw new DuplicateResourceException("Phone number already registered: " + request.getPhone());
         }
 
-        // Create new user
         User user = User.builder()
                 .name(request.getName())
                 .email(request.getEmail())
                 .phone(request.getPhone())
-                .password(
-                        passwordEncoder.encode(request.getPassword())
-                )
+                .password(passwordEncoder.encode(request.getPassword()))
                 .role(Role.CUSTOMER)
                 .active(true)
                 .build();
 
-        // Save user to database
         User savedUser = userRepository.save(user);
 
-        // Convert Entity → Response DTO
         return UserResponse.builder()
                 .id(savedUser.getId())
                 .name(savedUser.getName())
@@ -68,14 +63,12 @@ public class UserServiceImpl implements UserService {
                 .build();
     }
 
-    // =========================================================
-    // LOGIN
-    // =========================================================
-
     @Override
     public LoginResponse login(LoginRequest request) {
+        if (request == null) {
+            throw new BadRequestException("Login request is required");
+        }
 
-        // Authenticate email + password
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         request.getEmail(),
@@ -83,19 +76,15 @@ public class UserServiceImpl implements UserService {
                 )
         );
 
-        // Find user after successful authentication
-        User user = userRepository
-                .findByEmail(request.getEmail())
-                .orElseThrow(() ->
-                        new RuntimeException("User not found")
-                );
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        // Generate JWT token
-        String token = jwtService.generateToken(
-                user.getEmail()
-        );
+        if (!Boolean.TRUE.equals(user.getActive())) {
+            throw new BadRequestException("User account is inactive");
+        }
 
-        // Return login response
+        String token = jwtService.generateToken(user.getEmail());
+
         return LoginResponse.builder()
                 .token(token)
                 .userId(user.getId())
