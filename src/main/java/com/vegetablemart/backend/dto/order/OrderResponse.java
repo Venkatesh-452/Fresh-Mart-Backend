@@ -15,18 +15,19 @@ import java.util.List;
 public class OrderResponse {
 
     private Long orderId;
-
     private Long userId;
-
     private String customerName;
-
     private BigDecimal totalAmount;
-
     private OrderStatus status;
-
     private LocalDateTime orderDate;
 
+    private String deliveryFullName;
+    private String deliveryPhone;
     private String deliveryAddress;
+    private String deliveryCity;
+    private String deliveryState;
+    private String deliveryPincode;
+    private String deliveryLandmark;
 
     private List<OrderItemResponse> items;
 }
