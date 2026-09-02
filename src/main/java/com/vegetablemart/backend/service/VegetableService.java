@@ -13,10 +13,9 @@ public interface VegetableService {
 
     VegetableResponse getVegetableById(Long id);
 
-    VegetableResponse updateVegetable(
-            Long id,
-            VegetableRequest request
-    );
+    List<VegetableResponse> getVegetablesByCategory(Long categoryId);
+
+    VegetableResponse updateVegetable(Long id, VegetableRequest request);
 
     void deleteVegetable(Long id);
 }
