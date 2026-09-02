@@ -8,24 +8,15 @@ import java.util.List;
 
 public interface PaymentService {
 
-    PaymentResponse createPayment(
-            Long userId,
-            CreatePaymentRequest request
-    );
+    PaymentResponse createPayment(String email, CreatePaymentRequest request);
 
-    PaymentResponse getPaymentByOrder(
-            Long userId,
-            Long orderId
-    );
+    PaymentResponse getPaymentByOrder(String email, Long orderId);
 
-    List<PaymentResponse> getMyPayments(Long userId);
+    List<PaymentResponse> getMyPayments(String email);
 
     List<PaymentResponse> getAllPayments();
 
     List<PaymentResponse> getPendingPayments();
 
-    PaymentResponse updatePaymentStatus(
-            Long paymentId,
-            PaymentStatusRequest request
-    );
+    PaymentResponse updatePaymentStatus(Long paymentId, PaymentStatusRequest request);
 }
