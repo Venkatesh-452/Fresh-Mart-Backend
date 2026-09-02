@@ -12,6 +12,8 @@ public interface VegetableRepository extends JpaRepository<Vegetable, Long> {
 
     boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
 
+    boolean existsByCategoryIdAndActiveTrue(Long categoryId);
+
     Optional<Vegetable> findByNameIgnoreCase(String name);
 
     Optional<Vegetable> findByIdAndActiveTrue(Long id);
