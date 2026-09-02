@@ -37,9 +37,14 @@ public class InventoryServiceImpl implements InventoryService {
                 .orElseGet(() -> Inventory.builder().vegetable(vegetable).totalStock(BigDecimal.ZERO)
                         .soldQuantity(BigDecimal.ZERO).availableQuantity(BigDecimal.ZERO).build());
 
+        BigDecimal totalStock = inventory.getTotalStock() == null ? BigDecimal.ZERO : inventory.getTotalStock();
+        BigDecimal availableQuantity = inventory.getAvailableQuantity() == null ? BigDecimal.ZERO : inventory.getAvailableQuantity();
+        BigDecimal soldQuantity = inventory.getSoldQuantity() == null ? BigDecimal.ZERO : inventory.getSoldQuantity();
         BigDecimal quantity = request.getQuantity();
-        inventory.setTotalStock(inventory.getTotalStock().add(quantity));
-        inventory.setAvailableQuantity(inventory.getAvailableQuantity().add(quantity));
+
+        inventory.setTotalStock(totalStock.add(quantity));
+        inventory.setAvailableQuantity(availableQuantity.add(quantity));
+        inventory.setSoldQuantity(soldQuantity);
         vegetable.setQuantity(inventory.getAvailableQuantity());
         vegetableRepository.save(vegetable);
         return mapToResponse(inventoryRepository.save(inventory));
