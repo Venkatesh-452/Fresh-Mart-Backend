@@ -22,12 +22,7 @@ public class GlobalExceptionHandler {
             ResourceNotFoundException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
-                HttpStatus.NOT_FOUND,
-                exception.getMessage(),
-                request,
-                null
-        );
+        return buildResponse(HttpStatus.NOT_FOUND, exception.getMessage(), request, null);
     }
 
     @ExceptionHandler(DuplicateResourceException.class)
@@ -35,28 +30,15 @@ public class GlobalExceptionHandler {
             DuplicateResourceException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
-                HttpStatus.CONFLICT,
-                exception.getMessage(),
-                request,
-                null
-        );
+        return buildResponse(HttpStatus.CONFLICT, exception.getMessage(), request, null);
     }
 
-    @ExceptionHandler({
-            BadRequestException.class,
-            IllegalArgumentException.class
-    })
+    @ExceptionHandler({BadRequestException.class, IllegalArgumentException.class})
     public ResponseEntity<ErrorResponse> handleBadRequest(
             RuntimeException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
-                HttpStatus.BAD_REQUEST,
-                exception.getMessage(),
-                request,
-                null
-        );
+        return buildResponse(HttpStatus.BAD_REQUEST, exception.getMessage(), request, null);
     }
 
     @ExceptionHandler(UnauthorizedException.class)
@@ -64,12 +46,7 @@ public class GlobalExceptionHandler {
             UnauthorizedException exception,
             HttpServletRequest request
     ) {
-        return buildResponse(
-                HttpStatus.FORBIDDEN,
-                exception.getMessage(),
-                request,
-                null
-        );
+        return buildResponse(HttpStatus.UNAUTHORIZED, exception.getMessage(), request, null);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -77,26 +54,14 @@ public class GlobalExceptionHandler {
             MethodArgumentNotValidException exception,
             HttpServletRequest request
     ) {
-
         Map<String, String> errors = new LinkedHashMap<>();
-
-        exception.getBindingResult()
-                .getAllErrors()
-                .forEach(error -> {
-
-                    String field = error instanceof FieldError fieldError
-                            ? fieldError.getField()
-                            : error.getObjectName();
-
-                    errors.put(field, error.getDefaultMessage());
-                });
-
-        return buildResponse(
-                HttpStatus.BAD_REQUEST,
-                "Validation failed",
-                request,
-                errors
-        );
+        exception.getBindingResult().getAllErrors().forEach(error -> {
+            String field = error instanceof FieldError fieldError
+                    ? fieldError.getField()
+                    : error.getObjectName();
+            errors.put(field, error.getDefaultMessage());
+        });
+        return buildResponse(HttpStatus.BAD_REQUEST, "Validation failed", request, errors);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -131,7 +96,6 @@ public class GlobalExceptionHandler {
             HttpServletRequest request,
             Map<String, String> validationErrors
     ) {
-
         ErrorResponse response = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(status.value())
@@ -140,7 +104,6 @@ public class GlobalExceptionHandler {
                 .path(request.getRequestURI())
                 .validationErrors(validationErrors)
                 .build();
-
         return ResponseEntity.status(status).body(response);
     }
 }
