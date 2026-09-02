@@ -121,9 +121,7 @@ public class OrderServiceImpl implements OrderService {
         try { newStatus = OrderStatus.valueOf(status.trim().toUpperCase()); }
         catch (IllegalArgumentException e) { throw new BadRequestException("Invalid order status: " + status); }
         OrderStatus currentStatus = order.getStatus();
-        if (currentStatus == OrderStatus.CANCELLED) throw new BadRequestException("Cancelled order cannot be updated");
-        if (currentStatus == OrderStatus.DELIVERED && newStatus != OrderStatus.DELIVERED)
-            throw new BadRequestException("Delivered order cannot be moved to another status");
+        validateStatusTransition(currentStatus, newStatus);
         if (newStatus == OrderStatus.CANCELLED) restoreStock(order);
         order.setStatus(newStatus);
         return mapToOrderResponse(orderRepository.save(order));
@@ -134,10 +132,30 @@ public class OrderServiceImpl implements OrderService {
         validateId(orderId);
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with ID: " + orderId));
-        if (order.getStatus() == OrderStatus.CANCELLED) {
+        if (order.getStatus() == OrderStatus.CANCELLED) return;
+        if (order.getStatus() == OrderStatus.DELIVERED)
+            throw new BadRequestException("Delivered order stock cannot be restored");
+        restoreStock(order);
+    }
+
+    private void validateStatusTransition(OrderStatus current, OrderStatus next) {
+        if (current == null) throw new BadRequestException("Order has no current status");
+        if (current == OrderStatus.CANCELLED)
+            throw new BadRequestException("Cancelled order cannot be updated");
+        if (current == OrderStatus.DELIVERED) {
+            if (next != OrderStatus.DELIVERED)
+                throw new BadRequestException("Delivered order cannot be moved to another status");
             return;
         }
-        restoreStock(order);
+        if (current == next) return;
+        boolean valid = switch (current) {
+            case PLACED -> next == OrderStatus.CONFIRMED || next == OrderStatus.CANCELLED;
+            case CONFIRMED -> next == OrderStatus.PACKED || next == OrderStatus.CANCELLED;
+            case PACKED -> next == OrderStatus.OUT_FOR_DELIVERY || next == OrderStatus.CANCELLED;
+            case OUT_FOR_DELIVERY -> next == OrderStatus.DELIVERED;
+            case DELIVERED, CANCELLED -> false;
+        };
+        if (!valid) throw new BadRequestException("Invalid order status transition: " + current + " -> " + next);
     }
 
     private void restoreStock(Order order) {
