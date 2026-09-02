@@ -4,19 +4,16 @@ import com.vegetablemart.backend.dto.cart.AddToCartRequest;
 import com.vegetablemart.backend.dto.cart.CartItemResponse;
 import com.vegetablemart.backend.dto.cart.CartResponse;
 import com.vegetablemart.backend.dto.cart.UpdateCartItemRequest;
-
 import com.vegetablemart.backend.entity.Cart;
 import com.vegetablemart.backend.entity.CartItem;
 import com.vegetablemart.backend.entity.User;
 import com.vegetablemart.backend.entity.Vegetable;
-
 import com.vegetablemart.backend.repository.CartItemRepository;
 import com.vegetablemart.backend.repository.CartRepository;
+import com.vegetablemart.backend.repository.InventoryRepository;
 import com.vegetablemart.backend.repository.UserRepository;
 import com.vegetablemart.backend.repository.VegetableRepository;
-
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,382 +25,200 @@ import java.util.List;
 @Transactional
 public class CartServiceImpl implements CartService {
 
-
     private final CartRepository cartRepository;
-
     private final CartItemRepository cartItemRepository;
-
+    private final InventoryRepository inventoryRepository;
     private final VegetableRepository vegetableRepository;
-
     private final UserRepository userRepository;
 
-
-// =========================================================
-// ADD ITEM TO CART
-// =========================================================
-
     @Override
-    public CartResponse addToCart(
-            String email,
-            AddToCartRequest request
-    ) {
+    public CartResponse addToCart(String email, AddToCartRequest request) {
+        validateRequest(request);
 
         User user = getUserByEmail(email);
+        Vegetable vegetable = getActiveVegetable(request.getVegetableId());
 
+        validateStock(vegetable, request.getQuantity());
 
-        Vegetable vegetable =
-                vegetableRepository.findById(
-                                request.getVegetableId()
-                        )
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Vegetable not found with ID: "
-                                                + request.getVegetableId()
-                                )
-                        );
+        Cart cart = getOrCreateCart(user);
 
+        CartItem cartItem = cartItemRepository
+                .findByCartIdAndVegetableId(cart.getId(), vegetable.getId())
+                .orElse(null);
 
-        // Check whether vegetable is active
-        if (!Boolean.TRUE.equals(
-                vegetable.getActive()
-        )) {
-
-            throw new RuntimeException(
-                    "Vegetable is not available"
-            );
-        }
-
-
-        // Check requested quantity against stock
-        if (request.getQuantity()
-                .compareTo(vegetable.getQuantity()) > 0) {
-
-            throw new RuntimeException(
-                    "Insufficient stock. Available quantity: "
-                            + vegetable.getQuantity()
-            );
-        }
-
-
-        // Find existing cart or create a new one
-        Cart cart =
-                cartRepository.findByUserId(
-                                user.getId()
-                        )
-                        .orElseGet(() -> {
-
-                            Cart newCart = Cart.builder()
-                                    .user(user)
-                                    .build();
-
-                            return cartRepository.save(newCart);
-                        });
-
-
-        // Find existing cart item
-        CartItem cartItem =
-                cartItemRepository
-                        .findByCartIdAndVegetableId(
-                                cart.getId(),
-                                vegetable.getId()
-                        )
-                        .orElse(null);
-
-
-        if (cartItem != null) {
-
-            // Existing quantity + requested quantity
-            BigDecimal newQuantity =
-                    cartItem.getQuantity()
-                            .add(request.getQuantity());
-
-
-            // Make sure total quantity doesn't exceed stock
-            if (newQuantity.compareTo(
-                    vegetable.getQuantity()
-            ) > 0) {
-
-                throw new RuntimeException(
-                        "Cannot add more than available stock. "
-                                + "Available quantity: "
-                                + vegetable.getQuantity()
-                );
-            }
-
-
-            cartItem.setQuantity(newQuantity);
-
-
-            // Update price to current vegetable price
-            cartItem.setPrice(
-                    vegetable.getPrice()
-            );
-
-        } else {
-
-            // Create new cart item
+        if (cartItem == null) {
             cartItem = CartItem.builder()
                     .cart(cart)
                     .vegetable(vegetable)
                     .quantity(request.getQuantity())
                     .price(vegetable.getPrice())
                     .build();
+        } else {
+            BigDecimal newQuantity = cartItem.getQuantity().add(request.getQuantity());
+            validateStock(vegetable, newQuantity);
+            cartItem.setQuantity(newQuantity);
+            cartItem.setPrice(vegetable.getPrice());
         }
 
-
         cartItemRepository.save(cartItem);
-
-
         return buildCartResponse(cart);
     }
-
-
-// =========================================================
-// GET CART
-// =========================================================
 
     @Override
     @Transactional(readOnly = true)
-    public CartResponse getCart(
-            String email
-    ) {
-
+    public CartResponse getCart(String email) {
         User user = getUserByEmail(email);
 
-
-        Cart cart =
-                cartRepository.findByUserId(
-                                user.getId()
-                        )
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Cart not found"
-                                )
-                        );
-
+        Cart cart = cartRepository.findByUserId(user.getId())
+                .orElseGet(() -> Cart.builder().user(user).items(List.of()).build());
 
         return buildCartResponse(cart);
     }
-
-
-// =========================================================
-// UPDATE CART ITEM
-// =========================================================
 
     @Override
     public CartResponse updateCartItem(
             String email,
             Long cartItemId,
-            UpdateCartItemRequest request
-    ) {
+            UpdateCartItemRequest request) {
+
+        validateId(cartItemId, "Cart item ID");
+        validateRequest(request);
 
         User user = getUserByEmail(email);
+        Cart cart = getUserCart(user);
+        CartItem cartItem = getCartItemForUser(cartItemId, cart);
+        Vegetable vegetable = getActiveVegetable(cartItem.getVegetable().getId());
 
+        validateStock(vegetable, request.getQuantity());
 
-        Cart cart =
-                cartRepository.findByUserId(
-                                user.getId()
-                        )
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Cart not found"
-                                )
-                        );
-
-
-        CartItem cartItem =
-                cartItemRepository.findById(
-                                cartItemId
-                        )
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Cart item not found"
-                                )
-                        );
-
-
-        // IMPORTANT:
-        // Verify that this cart item belongs
-        // to the logged-in user's cart.
-        if (!cartItem.getCart()
-                .getId()
-                .equals(cart.getId())) {
-
-            throw new RuntimeException(
-                    "Cart item does not belong to this user"
-            );
-        }
-
-
-        Vegetable vegetable =
-                cartItem.getVegetable();
-
-
-        // Check current stock
-        if (request.getQuantity()
-                .compareTo(
-                        vegetable.getQuantity()
-                ) > 0) {
-
-            throw new RuntimeException(
-                    "Insufficient stock. Available quantity: "
-                            + vegetable.getQuantity()
-            );
-        }
-
-
-        // Check vegetable availability
-        if (!Boolean.TRUE.equals(
-                vegetable.getActive()
-        )) {
-
-            throw new RuntimeException(
-                    "Vegetable is not available"
-            );
-        }
-
-
-        cartItem.setQuantity(
-                request.getQuantity()
-        );
-
-
-        // Keep price synchronized with current price
-        cartItem.setPrice(
-                vegetable.getPrice()
-        );
-
-
+        cartItem.setQuantity(request.getQuantity());
+        cartItem.setPrice(vegetable.getPrice());
         cartItemRepository.save(cartItem);
-
 
         return buildCartResponse(cart);
     }
 
-
-// =========================================================
-// REMOVE CART ITEM
-// =========================================================
-
     @Override
-    public void removeCartItem(
-            String email,
-            Long cartItemId
-    ) {
+    public void removeCartItem(String email, Long cartItemId) {
+        validateId(cartItemId, "Cart item ID");
 
         User user = getUserByEmail(email);
+        Cart cart = getUserCart(user);
+        CartItem cartItem = getCartItemForUser(cartItemId, cart);
 
-
-        Cart cart =
-                cartRepository.findByUserId(
-                                user.getId()
-                        )
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Cart not found"
-                                )
-                        );
-
-
-        CartItem cartItem =
-                cartItemRepository.findById(
-                                cartItemId
-                        )
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Cart item not found"
-                                )
-                        );
-
-
-        // Prevent deleting another user's cart item
-        if (!cartItem.getCart()
-                .getId()
-                .equals(cart.getId())) {
-
-            throw new RuntimeException(
-                    "Cart item does not belong to this user"
-            );
-        }
-
-
+        cart.removeItem(cartItem);
         cartItemRepository.delete(cartItem);
     }
 
-
-// =========================================================
-// CLEAR CART
-// =========================================================
-
     @Override
-    public void clearCart(
-            String email
-    ) {
-
+    public void clearCart(String email) {
         User user = getUserByEmail(email);
-
-
-        Cart cart =
-                cartRepository.findByUserId(
-                                user.getId()
-                        )
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Cart not found"
-                                )
-                        );
-
-
+        Cart cart = getUserCart(user);
         cart.getItems().clear();
-
         cartRepository.save(cart);
     }
 
+    private User getUserByEmail(String email) {
+        if (email == null || email.isBlank()) {
+            throw new RuntimeException("Authenticated user email is required");
+        }
 
-// =========================================================
-// FIND USER BY EMAIL
-// =========================================================
-
-    private User getUserByEmail(
-            String email
-    ) {
-
-        return userRepository
-                .findByEmail(email)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "User not found with email: "
-                                        + email
-                        )
-                );
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException(
+                        "User not found with email: " + email));
     }
 
+    private Cart getOrCreateCart(User user) {
+        return cartRepository.findByUserId(user.getId())
+                .orElseGet(() -> cartRepository.save(
+                        Cart.builder()
+                                .user(user)
+                                .build()));
+    }
 
-// =========================================================
-// BUILD CART RESPONSE
-// =========================================================
+    private Cart getUserCart(User user) {
+        return cartRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new RuntimeException("Cart not found"));
+    }
 
-    private CartResponse buildCartResponse(
-            Cart cart
-    ) {
+    private CartItem getCartItemForUser(Long cartItemId, Cart cart) {
+        CartItem cartItem = cartItemRepository.findById(cartItemId)
+                .orElseThrow(() -> new RuntimeException("Cart item not found"));
 
-        List<CartItemResponse> items =
-                cart.getItems()
-                        .stream()
-                        .map(this::mapToCartItemResponse)
-                        .toList();
+        if (cartItem.getCart() == null
+                || !cartItem.getCart().getId().equals(cart.getId())) {
+            throw new RuntimeException("Cart item does not belong to this user");
+        }
 
+        return cartItem;
+    }
 
-        BigDecimal totalAmount =
-                items.stream()
-                        .map(
-                                CartItemResponse::getSubtotal
-                        )
-                        .reduce(
-                                BigDecimal.ZERO,
-                                BigDecimal::add
-                        );
+    private Vegetable getActiveVegetable(Long vegetableId) {
+        validateId(vegetableId, "Vegetable ID");
 
+        Vegetable vegetable = vegetableRepository.findById(vegetableId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Vegetable not found with ID: " + vegetableId));
+
+        if (!Boolean.TRUE.equals(vegetable.getActive())) {
+            throw new RuntimeException("Vegetable is not available");
+        }
+
+        return vegetable;
+    }
+
+    private void validateStock(Vegetable vegetable, BigDecimal requestedQuantity) {
+        BigDecimal availableQuantity = inventoryRepository
+                .findByVegetableId(vegetable.getId())
+                .map(inventory -> inventory.getAvailableQuantity())
+                .orElse(vegetable.getQuantity());
+
+        if (availableQuantity == null) {
+            availableQuantity = BigDecimal.ZERO;
+        }
+
+        if (requestedQuantity.compareTo(availableQuantity) > 0) {
+            throw new RuntimeException(
+                    "Insufficient stock. Available quantity: " + availableQuantity);
+        }
+    }
+
+    private void validateRequest(AddToCartRequest request) {
+        if (request == null) {
+            throw new RuntimeException("Cart request is required");
+        }
+        if (request.getVegetableId() == null || request.getVegetableId() <= 0) {
+            throw new RuntimeException("Vegetable ID must be positive");
+        }
+        if (request.getQuantity() == null
+                || request.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("Quantity must be greater than 0");
+        }
+    }
+
+    private void validateRequest(UpdateCartItemRequest request) {
+        if (request == null
+                || request.getQuantity() == null
+                || request.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("Quantity must be greater than 0");
+        }
+    }
+
+    private void validateId(Long id, String fieldName) {
+        if (id == null || id <= 0) {
+            throw new RuntimeException(fieldName + " must be positive");
+        }
+    }
+
+    private CartResponse buildCartResponse(Cart cart) {
+        List<CartItemResponse> items = cart.getItems()
+                .stream()
+                .map(this::mapToCartItemResponse)
+                .toList();
+
+        BigDecimal totalAmount = items.stream()
+                .map(CartItemResponse::getSubtotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return CartResponse.builder()
                 .cartId(cart.getId())
@@ -413,40 +228,17 @@ public class CartServiceImpl implements CartService {
                 .build();
     }
 
-
-// =========================================================
-// MAP CART ITEM RESPONSE
-// =========================================================
-
-    private CartItemResponse mapToCartItemResponse(
-            CartItem item
-    ) {
-
-        BigDecimal subtotal =
-                item.getPrice()
-                        .multiply(item.getQuantity());
-
+    private CartItemResponse mapToCartItemResponse(CartItem item) {
+        BigDecimal subtotal = item.getPrice().multiply(item.getQuantity());
 
         return CartItemResponse.builder()
                 .id(item.getId())
-                .vegetableId(
-                        item.getVegetable().getId()
-                )
-                .vegetableName(
-                        item.getVegetable().getName()
-                )
-                .imageUrl(
-                        item.getVegetable().getImageUrl()
-                )
-                .quantity(
-                        item.getQuantity()
-                )
-                .price(
-                        item.getPrice()
-                )
+                .vegetableId(item.getVegetable().getId())
+                .vegetableName(item.getVegetable().getName())
+                .imageUrl(item.getVegetable().getImageUrl())
+                .quantity(item.getQuantity())
+                .price(item.getPrice())
                 .subtotal(subtotal)
                 .build();
     }
-
-
 }
