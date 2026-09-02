@@ -6,14 +6,17 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 import java.util.Optional;
 
-public interface VegetableRepository
-        extends JpaRepository<Vegetable, Long> {
+public interface VegetableRepository extends JpaRepository<Vegetable, Long> {
 
-    boolean existsByName(String name);
+    boolean existsByNameIgnoreCase(String name);
 
-    Optional<Vegetable> findByName(String name);
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
 
-    List<Vegetable> findByCategoryId(Long categoryId);
+    Optional<Vegetable> findByNameIgnoreCase(String name);
+
+    Optional<Vegetable> findByIdAndActiveTrue(Long id);
 
     List<Vegetable> findByActiveTrue();
+
+    List<Vegetable> findByCategoryIdAndActiveTrue(Long categoryId);
 }
