@@ -16,4 +16,6 @@ public interface OrderService {
     List<OrderResponse> getAllOrders();
 
     OrderResponse updateOrderStatus(Long orderId, String status);
+
+    void restoreStock(Long orderId);
 }
