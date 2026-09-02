@@ -11,6 +11,8 @@ public interface CategoryRepository
 
     boolean existsByNameIgnoreCase(String name);
 
+    boolean existsByVegetablesCategoryIdAndVegetablesActiveTrue(Long categoryId);
+
     Optional<Category> findByNameIgnoreCase(String name);
 
     Optional<Category> findByIdAndActiveTrue(Long id);
