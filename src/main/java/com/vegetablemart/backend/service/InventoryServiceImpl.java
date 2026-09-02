@@ -6,7 +6,8 @@ import com.vegetablemart.backend.entity.Inventory;
 import com.vegetablemart.backend.entity.Vegetable;
 import com.vegetablemart.backend.repository.InventoryRepository;
 import com.vegetablemart.backend.repository.VegetableRepository;
-import com.vegetablemart.backend.service.InventoryService;
+
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,79 +24,48 @@ public class InventoryServiceImpl implements InventoryService {
     private final VegetableRepository vegetableRepository;
 
     @Override
-    public InventoryResponse addStock(
-            AddStockRequest request
-    ) {
-
-        // 1. Find vegetable
-        Vegetable vegetable = vegetableRepository
-                .findById(request.getVegetableId())
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Vegetable not found with ID: "
-                                        + request.getVegetableId()
-                        )
-                );
-
-        // 2. Check if inventory already exists
-        Inventory inventory = inventoryRepository
-                .findByVegetableId(vegetable.getId())
-                .orElse(null);
-
-        if (inventory == null) {
-
-            // First stock entry
-            inventory = Inventory.builder()
-                    .vegetable(vegetable)
-                    .totalStock(request.getQuantity())
-                    .soldQuantity(BigDecimal.ZERO)
-                    .availableQuantity(request.getQuantity())
-                    .build();
-
-        } else {
-
-            // Existing inventory
-            BigDecimal newTotalStock =
-                    inventory.getTotalStock()
-                            .add(request.getQuantity());
-
-            BigDecimal newAvailableStock =
-                    inventory.getAvailableQuantity()
-                            .add(request.getQuantity());
-
-            inventory.setTotalStock(newTotalStock);
-            inventory.setAvailableQuantity(
-                    newAvailableStock
-            );
+    public InventoryResponse addStock(@Valid AddStockRequest request) {
+        if (request == null || request.getVegetableId() == null) {
+            throw new RuntimeException("Vegetable ID is required");
+        }
+        if (request.getQuantity() == null || request.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("Stock quantity must be greater than 0");
         }
 
-        // 3. Keep Vegetable quantity synchronized
-        vegetable.setQuantity(
-                inventory.getAvailableQuantity()
-        );
+        Vegetable vegetable = vegetableRepository.findById(request.getVegetableId())
+                .orElseThrow(() -> new RuntimeException(
+                        "Vegetable not found with ID: " + request.getVegetableId()));
 
+        if (!Boolean.TRUE.equals(vegetable.getActive())) {
+            throw new RuntimeException("Cannot add stock to an inactive vegetable");
+        }
+
+        Inventory inventory = inventoryRepository.findByVegetableId(vegetable.getId())
+                .orElseGet(() -> Inventory.builder()
+                        .vegetable(vegetable)
+                        .totalStock(BigDecimal.ZERO)
+                        .soldQuantity(BigDecimal.ZERO)
+                        .availableQuantity(BigDecimal.ZERO)
+                        .build());
+
+        BigDecimal quantity = request.getQuantity();
+        inventory.setTotalStock(inventory.getTotalStock().add(quantity));
+        inventory.setAvailableQuantity(inventory.getAvailableQuantity().add(quantity));
+
+        vegetable.setQuantity(inventory.getAvailableQuantity());
         vegetableRepository.save(vegetable);
 
-        // 4. Save inventory
-        inventory = inventoryRepository.save(inventory);
-
-        return mapToResponse(inventory);
+        return mapToResponse(inventoryRepository.save(inventory));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public InventoryResponse getInventoryByVegetable(
-            Long vegetableId
-    ) {
+    public InventoryResponse getInventoryByVegetable(Long vegetableId) {
+        validateId(vegetableId);
 
-        Inventory inventory = inventoryRepository
-                .findByVegetableId(vegetableId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Inventory not found for vegetable ID: "
-                                        + vegetableId
-                        )
-                );
+        Inventory inventory = inventoryRepository.findByVegetableId(vegetableId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Inventory not found for vegetable ID: " + vegetableId));
 
         return mapToResponse(inventory);
     }
@@ -103,7 +73,6 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     @Transactional(readOnly = true)
     public List<InventoryResponse> getAllInventory() {
-
         return inventoryRepository.findAll()
                 .stream()
                 .map(this::mapToResponse)
@@ -112,26 +81,23 @@ public class InventoryServiceImpl implements InventoryService {
 
     @Override
     @Transactional(readOnly = true)
-    public InventoryResponse getInventoryById(
-            Long inventoryId
-    ) {
+    public InventoryResponse getInventoryById(Long inventoryId) {
+        validateId(inventoryId);
 
-        Inventory inventory = inventoryRepository
-                .findById(inventoryId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Inventory not found with ID: "
-                                        + inventoryId
-                        )
-                );
+        Inventory inventory = inventoryRepository.findById(inventoryId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Inventory not found with ID: " + inventoryId));
 
         return mapToResponse(inventory);
     }
 
-    private InventoryResponse mapToResponse(
-            Inventory inventory
-    ) {
+    private void validateId(Long id) {
+        if (id == null || id <= 0) {
+            throw new RuntimeException("ID must be positive");
+        }
+    }
 
+    private InventoryResponse mapToResponse(Inventory inventory) {
         Vegetable vegetable = inventory.getVegetable();
 
         return InventoryResponse.builder()
@@ -141,9 +107,7 @@ public class InventoryServiceImpl implements InventoryService {
                 .imageUrl(vegetable.getImageUrl())
                 .totalStock(inventory.getTotalStock())
                 .soldQuantity(inventory.getSoldQuantity())
-                .availableQuantity(
-                        inventory.getAvailableQuantity()
-                )
+                .availableQuantity(inventory.getAvailableQuantity())
                 .unit(vegetable.getUnit())
                 .lastUpdated(inventory.getLastUpdated())
                 .build();
