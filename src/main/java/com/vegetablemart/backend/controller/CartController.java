@@ -4,147 +4,72 @@ import com.vegetablemart.backend.dto.cart.AddToCartRequest;
 import com.vegetablemart.backend.dto.cart.CartResponse;
 import com.vegetablemart.backend.dto.cart.UpdateCartItemRequest;
 import com.vegetablemart.backend.service.CartService;
-
 import jakarta.validation.Valid;
-
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
-
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.*;
 
 import org.springframework.security.core.Authentication;
-
-import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/cart")
 @RequiredArgsConstructor
+@Validated
 public class CartController {
-
 
     private final CartService cartService;
 
-
-// =========================================================
-// ADD ITEM TO CART
-// =========================================================
-
     @PostMapping("/add")
     public ResponseEntity<CartResponse> addToCart(
-
             Authentication authentication,
-
-            @Valid @RequestBody AddToCartRequest request
-    ) {
-
-        String email =
-                authentication.getName();
+            @Valid @RequestBody AddToCartRequest request) {
 
         return ResponseEntity.ok(
-
-                cartService.addToCart(
-                        email,
-                        request
-                )
+                cartService.addToCart(authentication.getName(), request)
         );
     }
-
-
-// =========================================================
-// GET LOGGED-IN USER CART
-// =========================================================
 
     @GetMapping
     public ResponseEntity<CartResponse> getCart(
-
-            Authentication authentication
-    ) {
-
-        String email =
-                authentication.getName();
+            Authentication authentication) {
 
         return ResponseEntity.ok(
-
-                cartService.getCart(email)
+                cartService.getCart(authentication.getName())
         );
     }
 
-
-// =========================================================
-// UPDATE CART ITEM
-// =========================================================
-
     @PutMapping("/item/{cartItemId}")
     public ResponseEntity<CartResponse> updateCartItem(
-
             Authentication authentication,
-
-            @PathVariable Long cartItemId,
-
-            @Valid @RequestBody UpdateCartItemRequest request
-    ) {
-
-        String email =
-                authentication.getName();
+            @PathVariable @Positive(message = "Cart item ID must be positive") Long cartItemId,
+            @Valid @RequestBody UpdateCartItemRequest request) {
 
         return ResponseEntity.ok(
-
                 cartService.updateCartItem(
-
-                        email,
-
+                        authentication.getName(),
                         cartItemId,
-
                         request
                 )
         );
     }
 
-
-// =========================================================
-// REMOVE CART ITEM
-// =========================================================
-
     @DeleteMapping("/item/{cartItemId}")
-    public ResponseEntity<String> removeCartItem(
-
+    public ResponseEntity<Void> removeCartItem(
             Authentication authentication,
+            @PathVariable @Positive(message = "Cart item ID must be positive") Long cartItemId) {
 
-            @PathVariable Long cartItemId
-    ) {
-
-        String email =
-                authentication.getName();
-
-        cartService.removeCartItem(
-                email,
-                cartItemId
-        );
-
-        return ResponseEntity.ok(
-                "Cart item removed successfully"
-        );
+        cartService.removeCartItem(authentication.getName(), cartItemId);
+        return ResponseEntity.noContent().build();
     }
-
-
-// =========================================================
-// CLEAR CART
-// =========================================================
 
     @DeleteMapping("/clear")
-    public ResponseEntity<String> clearCart(
+    public ResponseEntity<Void> clearCart(
+            Authentication authentication) {
 
-            Authentication authentication
-    ) {
-
-        String email =
-                authentication.getName();
-
-        cartService.clearCart(email);
-
-        return ResponseEntity.ok(
-                "Cart cleared successfully"
-        );
+        cartService.clearCart(authentication.getName());
+        return ResponseEntity.noContent().build();
     }
-
-
 }
