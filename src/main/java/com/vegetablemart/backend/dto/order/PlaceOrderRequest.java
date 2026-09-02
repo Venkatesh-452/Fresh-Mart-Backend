@@ -1,5 +1,7 @@
 package com.vegetablemart.backend.dto.order;
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import lombok.*;
 
 @Getter
@@ -9,5 +11,7 @@ import lombok.*;
 @Builder
 public class PlaceOrderRequest {
 
-    private String deliveryAddress;
+    @NotNull(message = "Address ID is required")
+    @Positive(message = "Address ID must be positive")
+    private Long addressId;
 }
