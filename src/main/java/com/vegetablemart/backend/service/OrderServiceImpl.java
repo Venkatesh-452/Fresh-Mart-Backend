@@ -13,6 +13,7 @@ import com.vegetablemart.backend.entity.OrderStatus;
 import com.vegetablemart.backend.entity.User;
 import com.vegetablemart.backend.entity.Vegetable;
 import com.vegetablemart.backend.exception.BadRequestException;
+import com.vegetablemart.backend.exception.ForbiddenException;
 import com.vegetablemart.backend.exception.ResourceNotFoundException;
 import com.vegetablemart.backend.repository.AddressRepository;
 import com.vegetablemart.backend.repository.CartRepository;
@@ -77,7 +78,8 @@ public class OrderServiceImpl implements OrderService {
                     .quantity(requestedQuantity).price(price).subtotal(subtotal).build());
             totalAmount = totalAmount.add(subtotal);
             inventory.setAvailableQuantity(availableQuantity.subtract(requestedQuantity));
-            inventory.setSoldQuantity(inventory.getSoldQuantity().add(requestedQuantity));
+            BigDecimal soldQuantity = inventory.getSoldQuantity() == null ? BigDecimal.ZERO : inventory.getSoldQuantity();
+            inventory.setSoldQuantity(soldQuantity.add(requestedQuantity));
             vegetable.setQuantity(inventory.getAvailableQuantity());
         }
         order.setTotalAmount(totalAmount);
@@ -100,7 +102,7 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with ID: " + orderId));
         if (!order.getUser().getId().equals(user.getId()))
-            throw new BadRequestException("You are not authorized to view this order");
+            throw new ForbiddenException("You are not authorized to view this order");
         return mapToOrderResponse(order);
     }
 
@@ -132,8 +134,10 @@ public class OrderServiceImpl implements OrderService {
             Vegetable vegetable = item.getVegetable();
             Inventory inventory = inventoryRepository.findByVegetableId(vegetable.getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Inventory not found for vegetable: " + vegetable.getName()));
-            inventory.setAvailableQuantity(inventory.getAvailableQuantity().add(item.getQuantity()));
-            inventory.setSoldQuantity(inventory.getSoldQuantity().subtract(item.getQuantity()));
+            BigDecimal availableQuantity = inventory.getAvailableQuantity() == null ? BigDecimal.ZERO : inventory.getAvailableQuantity();
+            BigDecimal soldQuantity = inventory.getSoldQuantity() == null ? BigDecimal.ZERO : inventory.getSoldQuantity();
+            inventory.setAvailableQuantity(availableQuantity.add(item.getQuantity()));
+            inventory.setSoldQuantity(soldQuantity.subtract(item.getQuantity()).max(BigDecimal.ZERO));
             vegetable.setQuantity(inventory.getAvailableQuantity());
         }
     }
