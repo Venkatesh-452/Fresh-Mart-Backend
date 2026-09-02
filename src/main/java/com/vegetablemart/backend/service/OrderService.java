@@ -7,22 +7,13 @@ import java.util.List;
 
 public interface OrderService {
 
-    OrderResponse placeOrder(
-            Long userId,
-            PlaceOrderRequest request
-    );
+    OrderResponse placeOrder(String email, PlaceOrderRequest request);
 
-    List<OrderResponse> getMyOrders(Long userId);
+    List<OrderResponse> getMyOrders(String email);
 
-    OrderResponse getOrderById(
-            Long userId,
-            Long orderId
-    );
+    OrderResponse getOrderById(String email, Long orderId);
 
     List<OrderResponse> getAllOrders();
 
-    OrderResponse updateOrderStatus(
-            Long orderId,
-            String status
-    );
+    OrderResponse updateOrderStatus(Long orderId, String status);
 }
